@@ -1,0 +1,41 @@
+#summary Supported events
+
+= Introduction =
+
+hid-support consists of a server that runs inside of SpringBoard or Lowtide. IPC is done via Mach Port RPC. The message ID is used to encode the desired action.
+
+
+= Details =
+
+It will provide the following HID support actions (with command id):
+
+  * Text injection (0x10)
+    * Data: UTF8 string
+
+  * Key down(0x20)/key up(0x21)
+   * Assumption: hid-support OR iOS provides key repetition
+   * Data: uint32_t unicode of key. Enumeration of special keys to be defined
+
+  * Remote control down(0x30)/up(0x31):
+   * Assumption: users e.g. sends down and up if she wants a single move left
+   * Data: uint32_t enum of up/down/left/right/menu/select/play
+
+  * Mouse pointer
+    * keep-alive = enable pointer (0x40)
+    * relative movement (0x41)
+      * Data: int32 x,y
+      * for mouse/trackpad driver 
+      * movement on screen depends on screen orientation
+    * absolute position (0x42)
+      * Data: int32 x,y
+      * for VNC
+      * position is absolute to fixed screen geometry
+    * buttons (0x43):
+      * Data: left mouse button down/up
+
+  * Multitouch (0x50)
+    * coordinates in screen geometry
+    * Data: int32 number of touches, {(x,y)}*
+
+  * Accelerometer (0x51)
+    * Data: int x/y/z
