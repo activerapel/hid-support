@@ -14,6 +14,7 @@ It will provide the following HID support actions (with command id):
 
   * Key down(0x20)/key up(0x21)
    * Assumption: hid-support OR iOS provides key repetition
+   * Data: uint32_t key modifiers flag. 1 = CMD, 2 = ALT
    * Data: uint32_t unicode of key. Enumeration of special keys to be defined
 
   * Remote control down(0x30)/up(0x31):
