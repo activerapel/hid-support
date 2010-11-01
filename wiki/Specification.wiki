@@ -38,5 +38,5 @@ It will provide the following HID support actions (with command id):
     * coordinates in screen geometry
     * Data: int32 number of touches, {(x,y)}`*`
 
-  * Accelerometer (0x51)
+  * Accelerometer (0x60)
     * Data: int x/y/z
