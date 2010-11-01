@@ -2,7 +2,7 @@
 
 = Introduction =
 
-hid-support consists of a server that runs inside of SpringBoard or Lowtide. IPC is done via Mach Port RPC. The message ID is used to encode the desired action.
+hid-support consists of a server that runs inside of !SpringBoard or Lowtide. IPC is done via Mach Port RPC. The message ID is used to encode the desired action.
 
 
 = Details =
@@ -35,7 +35,7 @@ It will provide the following HID support actions (with command id):
 
   * Multitouch (0x50)
     * coordinates in screen geometry
-    * Data: int32 number of touches, {(x,y)}*
+    * Data: int32 number of touches, {(x,y)}`*`
 
   * Accelerometer (0x51)
     * Data: int x/y/z
