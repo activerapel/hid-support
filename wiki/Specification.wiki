@@ -9,34 +9,36 @@ hid-support consists of a server that runs inside of !SpringBoard or Lowtide. IP
 
 It will provide the following HID support actions (with command id):
 
-  * Text injection (0x10)
+  * Text injection (0x01)
     * Data: UTF8 string
 
-  * Key down(0x20)/key up(0x21)
+  * Key down/up (x02)
    * Assumption: hid-support OR iOS provides key repetition
+   * Data: uint16_t down flag
    * Data: uint32_t key modifiers flag. OR of CMD (0x01), ALT (0x02)
    * Data: uint32_t unicode of key. Enumeration of special keys to be defined
 
-  * Remote control down(0x30)/up(0x31):
+  * Remote control down/up (0x03):
    * Assumption: users e.g. sends down and up if she wants a single move left
+   * Data: uint16_t down flag
    * Data: uint32_t enum of up/down/left/right/menu/select/play
 
-  * Mouse pointer
-    * keep-alive = enable pointer (0x40)
-    * relative movement (0x41)
-      * Data: int32 x,y
+  * Mouse pointer (0x04)
+    * keep-alive:
+      * enable pointers
+    * relative movement
       * for mouse/trackpad driver 
       * movement on screen depends on screen orientation
-    * absolute position (0x42)
-      * Data: int32 x,y
+    * absolute position
       * for VNC
       * position is absolute to fixed screen geometry
-    * buttons (0x43):
-      * Data: left mouse button down/up
+    * Data: enum {keep-alive=1, absolute, relative} type
+    * Data: int32 x,y
+    * Data: uint16_t mouse buttons down/up
 
-  * Multitouch (0x50)
+  * Multitouch (0x05)
     * coordinates in screen geometry
     * Data: int32 number of touches, {(x,y)}`*`
 
-  * Accelerometer (0x60)
-    * Data: int x/y/z
+  * Accelerometer (0x06)
+    * Data: float x/y/z
