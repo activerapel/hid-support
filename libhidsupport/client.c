@@ -42,6 +42,7 @@ static int hid_send_message(hid_event_type_t cmd, uint16_t dataLen, uint8_t *dat
 		hid_support_message_port = CFMessagePortCreateRemote(NULL, CFSTR(HID_SUPPORT_PORT_NAME));
 	}
 	if (!hid_support_message_port) {
+		printf("hid_send_message cannot find server" HID_SUPPORT_PORT_NAME "\n");
 		return kCFMessagePortIsInvalid;
 	}
 	// create and send message
