@@ -30,46 +30,105 @@
  */
 
 	
+#import <CoreFoundation/CoreFoundation.h>
+
 #include "../hid-support-internal.h"
 
+static CFMessagePortRef hid_support_message_port = 0;
+
+static int hid_send_message(hid_event_type_t cmd, uint16_t dataLen, uint8_t *data, CFDataRef *resultData){
+	// check for port
+	if (!hid_support_message_port || !CFMessagePortIsValid(hid_support_message_port)) {
+		hid_support_message_port = CFMessagePortCreateRemote(NULL, CFSTR(HID_SUPPORT_PORT_NAME));
+	}
+	if (!hid_support_message_port) {
+		return kCFMessagePortIsInvalid;
+	}
+	// create and send message
+	CFDataRef cfData = CFDataCreate(NULL, data, dataLen);
+	CFStringRef replyMode = NULL;
+	if (resultData) {
+		replyMode = kCFRunLoopDefaultMode;
+	}
+	int result = CFMessagePortSendRequest(hid_support_message_port, cmd, cfData, 1, 1, replyMode, resultData);
+	CFRelease(cfData);
+	return result;
+}
+
 int hid_inject_text(const char * utf8_text){
-	return 0;
+	return hid_send_message(TEXT, strlen(utf8_text), (uint8_t *) utf8_text, 0);
 }
 
 int hid_inject_key_down(uint32_t unicode, uint16_t key_modifier) {
-	return 0;
+	key_event_t event;
+	event.down = 1;
+	event.modifier = key_modifier;
+	event.unicode = unicode;
+	return hid_send_message(KEY, sizeof(event), (uint8_t*) &event, 0);
 }
 
 int hid_inject_key_up(uint32_t unicode){
-	return 0;
+	key_event_t event;
+	event.modifier = 0;
+	event.down = 0;
+	event.unicode = unicode;
+	return hid_send_message(KEY, sizeof(event), (uint8_t*) &event, 0);
 }
 
 int hid_inject_remote_down(uint16_t action) {
-	return 0;
+	remote_action_t event;
+	event.down = 1;
+	event.action = action;
+	return hid_send_message(KEY, sizeof(event), (uint8_t*) &event, 0);
 }
 
 int hid_inject_remote_up(uint16_t action){
-	return 0;
+	remote_action_t event;
+	event.down = 0;
+	event.action = action;
+	return hid_send_message(KEY, sizeof(event), (uint8_t*) &event, 0);
 }
 
 int hid_inject_mouse_keep_alive(){
-	return 0;
+	mouse_event_t event;
+	event.type = KEEP_ALIVE;
+	return hid_send_message(MOUSE, sizeof(event), (uint8_t*) &event, 0);
 }
 
 int hid_inject_mouse_rel_move(uint8_t buttons, float dx, float dy){
-	return 0;
+	mouse_event_t event;
+	event.type = REL_MOVE;
+	event.buttons = buttons;
+	event.x = dx;
+	event.y = dy;
+	return hid_send_message(MOUSE, sizeof(event), (uint8_t*) &event, 0);
 }
 
 int hid_inject_mouse_abs_move(uint8_t buttons, float ax, float ay){
-	return 0;
+	mouse_event_t event;
+	event.type = ABS_MOVE;
+	event.buttons = buttons;
+	event.x = ax;
+	event.y = ay;
+	return hid_send_message(MOUSE, sizeof(event), (uint8_t*) &event, 0);
 }
 
 int hid_inject_touches(uint8_t num_touches, hid_touch_t *touches){
-	return 0;
+	if (num_touches > 10) num_touches = 10;
+	uint16_t event_size = num_touches * sizeof(hid_touch_t) + sizeof(uint16_t);
+	uint8_t event_buffer[event_size];
+	touch_event_t *event = (touch_event_t *) event_buffer;
+	event->num_touches = num_touches;
+	memcpy(event->touches, touches, num_touches * sizeof(hid_touch_t));
+	return hid_send_message(TOUCH, event_size, (uint8_t*) event, 0);
 }
 
 int hid_inject_accelerometer(float x, float y, float z){
-	return 0;
+	accelerometer_t event;
+	event.x = x;
+	event.y = y;
+	event.z = z;
+	return hid_send_message(ACCELEROMETER, sizeof(event), (uint8_t*) &event, 0);
 }
 	
 
