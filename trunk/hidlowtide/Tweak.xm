@@ -24,25 +24,54 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
     UInt16 dataLen = CFDataGetLength(cfData);
     NSString * text;
     BREvent *event = nil;
-    if (msgid) {
-        // simple remote actions
-        NSLog(@"Injecting action: %d", msgid);
-        event = [$BREvent eventWithAction:msgid value:1 atTime:7400.0 originator:5 eventDictionary:nil allowRetrigger:1];
-        [$BRWindow dispatchEvent:event];
-        event = [$BREvent eventWithAction:msgid value:0 atTime:7400.0 originator:5 eventDictionary:nil allowRetrigger:1];
-        [$BRWindow dispatchEvent:event];
-    } else if (dataLen > 0 && data){
-        // text entry
-        text = [NSString stringWithUTF8String:data];
-        NSLog(@"Injecting text: %@", text);
-        for (unsigned int i=0; i<[text length]; i++){
-            NSString * singleKey = [text substringWithRange:NSMakeRange(i,1)];
-            NSDictionary * eventDictionary = [NSDictionary dictionaryWithObject:singleKey forKey:@"kBRKeyEventCharactersKey"];
-            event = [$BREvent eventWithAction:BRRemoteActionKey value:1 atTime:7400.0 originator:5 eventDictionary:eventDictionary allowRetrigger:1];
-            [$BRWindow dispatchEvent:event];
-        }
-    }
-    return NULL;  // as stated in header, both data and returnData will be released for us after callback returns
+	NSDictionary * eventDictionary;
+	// have pointers ready
+    key_event_t     * key_event;
+    remote_action_t * remote_action;
+	unichar			  theChar;
+    // mouse_event_t   * mouse_event;
+	// touch_event_t   * touch_event;
+    // accelerometer_t * acceleometer;   
+
+	switch ( (hid_event_type_t) msgid){
+
+		case TEXT:
+			// regular text
+			if (dataLen > 0 && data){
+				// text entry
+				text = [NSString stringWithUTF8String:data];
+				NSLog(@"Injecting text: %@", text);
+				eventDictionary = [NSDictionary dictionaryWithObject:text forKey:@"kBRKeyEventCharactersKey"];
+				event = [$BREvent eventWithAction:BRRemoteActionKey value:1 atTime:7400.0 originator:5 eventDictionary:eventDictionary allowRetrigger:1];
+				[$BRWindow dispatchEvent:event];
+			}
+			break;
+			
+		case KEY:
+			// individual key events
+			key_event = (key_event_t*) data;
+			key_event->down = key_event->down ? 1 : 0;
+			NSLog(@"Injecting single char: %@ (%x), down: %u", key_event->unicode, key_event->unicode, key_event->down);
+			theChar = key_event->unicode;
+			text = [NSString stringWithCharacters:&theChar length:1];
+			eventDictionary = [NSDictionary dictionaryWithObject:text forKey:@"kBRKeyEventCharactersKey"];
+			event = [$BREvent eventWithAction:BRRemoteActionKey value:key_event->down atTime:7400.0 originator:5 eventDictionary:eventDictionary allowRetrigger:1];
+			[$BRWindow dispatchEvent:event];
+			break;
+			
+		case REMOTE:
+			// simple remote actions
+			remote_action = (remote_action_t*) data;
+			NSLog(@"Injecting action: %d down: %u", remote_action->down, remote_action->action);
+			remote_action->down = remote_action->down ? 1 : 0;
+			event = [$BREvent eventWithAction:remote_action->action value:remote_action->down atTime:7400.0 originator:5 eventDictionary:nil allowRetrigger:1];
+			[$BRWindow dispatchEvent:event];
+			break;
+			
+		default:
+			NSLog(@"HID_SUPPORT_PORT_NAME server, msgid %u not supported", msgid);
+	}
+	return NULL;  // as stated in header, both data and returnData will be released for us after callback returns
 }
 
 %hook BRWindow
@@ -55,7 +84,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 %hook LTAppDelegate
 -(void)applicationDidFinishLaunching:(id)fp8 {
 NSAutoreleasePool * pool = [[NSAutoreleasePool alloc] init];
-    CFMessagePortRef local = CFMessagePortCreateLocal(NULL, CFSTR("ch.ringwald.hidrelay"), myCallBack, NULL, false);
+    CFMessagePortRef local = CFMessagePortCreateLocal(NULL, CFSTR(HID_SUPPORT_PORT_NAME), myCallBack, NULL, false);
     CFRunLoopSourceRef source = CFMessagePortCreateRunLoopSource(NULL, local, 0);
     CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopDefaultMode);
     [pool release]; 
