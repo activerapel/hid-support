@@ -116,8 +116,8 @@ enum {
 };
 
 typedef struct hid_touch {
-	float x,
-	float y
+	float x;
+	float y;
 }  hid_touch_t;
 
 typedef enum hid_key_modifier {
