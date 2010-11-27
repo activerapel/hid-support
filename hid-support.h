@@ -114,7 +114,18 @@ enum {
     NSHelpFunctionKey           = 0xF746,
     NSModeSwitchFunctionKey     = 0xF747
 };
-
+	
+typedef enum BRRemoteAction {
+	BRRemoteActionMenu   =  1,
+	BRRemoteActionUp     =  3,
+	BRRemoteActionDown   =  4,
+	BRRemoteActionSelect =  5,
+	BRRemoteActionLeft   =  6,
+	BRRemoteActionRight  =  7,
+	BRRemoteActionPlay   = 10,
+	BRRemoteActionKey    = 47	// used in hid_inject_text, cannot be used in hid_inject_remote_action_x
+} BRRemoteAction_t;
+	
 typedef struct hid_touch {
 	float x;
 	float y;

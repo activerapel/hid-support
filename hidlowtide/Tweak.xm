@@ -6,17 +6,7 @@
  */
  
 #include <objc/runtime.h>
-
-enum BREventAction {
-    kMenu = 1,
-    kUp = 3,
-    kDown = 4,
-    kSelect = 5,
-    kLeft = 6,
-    kRight = 7,
-    kPlay = 10,
-    kKey  = 47
-} BRRemoteAction;
+#include "../hid-support-internal.h"
 
 @interface BRWindow : NSObject
 + (BOOL)dispatchEvent:(id)event;    // 0x315d47b5
@@ -48,7 +38,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
         for (unsigned int i=0; i<[text length]; i++){
             NSString * singleKey = [text substringWithRange:NSMakeRange(i,1)];
             NSDictionary * eventDictionary = [NSDictionary dictionaryWithObject:singleKey forKey:@"kBRKeyEventCharactersKey"];
-            event = [$BREvent eventWithAction:kKey value:1 atTime:7400.0 originator:5 eventDictionary:eventDictionary allowRetrigger:1];
+            event = [$BREvent eventWithAction:BRRemoteActionKey value:1 atTime:7400.0 originator:5 eventDictionary:eventDictionary allowRetrigger:1];
             [$BRWindow dispatchEvent:event];
         }
     }
