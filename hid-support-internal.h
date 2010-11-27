@@ -36,6 +36,7 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+	
 #include "hid-support.h"
 
 #define HID_SUPPORT_PORT_NAME "ch.ringwald.hidsupport"
@@ -56,9 +57,9 @@ typedef enum hid_mouse_type {
 } hid_mouse_type_t;
 
 typedef struct key_event {
-    uint16_t modifier;
-    uint32_t code;
     uint16_t down;
+    uint16_t modifier;
+    uint32_t unicode;
 } key_event_t;
 
 typedef struct remote_action {
@@ -70,7 +71,7 @@ typedef struct mouse_event {
     hid_mouse_type_t type;
     float x;
     float y;
-    uint16_t button;
+    uint16_t buttons;
 } mouse_event_t;
 
 typedef struct touche_vent {
