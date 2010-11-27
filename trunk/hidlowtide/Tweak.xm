@@ -20,8 +20,10 @@ static Class $BREvent  = objc_getClass("BREvent");
 static Class $BRWindow = objc_getClass("BRWindow");
 
 static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfData, void *info) {
+	NSLog(@"hidsupport callback, msg %u", msgid);
     const char *data = (const char *) CFDataGetBytePtr(cfData);
     UInt16 dataLen = CFDataGetLength(cfData);
+	char *buffer;
     NSString * text;
     BREvent *event = nil;
 	NSDictionary * eventDictionary;
@@ -37,21 +39,25 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 
 		case TEXT:
 			// regular text
-			if (dataLen > 0 && data){
-				// text entry
-				text = [NSString stringWithUTF8String:data];
-				NSLog(@"Injecting text: %@", text);
-				eventDictionary = [NSDictionary dictionaryWithObject:text forKey:@"kBRKeyEventCharactersKey"];
-				event = [$BREvent eventWithAction:BRRemoteActionKey value:1 atTime:7400.0 originator:5 eventDictionary:eventDictionary allowRetrigger:1];
-				[$BRWindow dispatchEvent:event];
-			}
+			if (dataLen == 0 || !data) break;
+			// append \0 byte for NSString conversion
+			buffer = (char*) malloc( dataLen + 1);
+			if (!buffer); break;
+			memcpy(buffer, data, dataLen);
+			buffer[dataLen] = 0;
+			text = [NSString stringWithUTF8String:buffer];
+			// NSLog(@"Injecting text: %@", text);
+			eventDictionary = [NSDictionary dictionaryWithObject:text forKey:@"kBRKeyEventCharactersKey"];
+			event = [$BREvent eventWithAction:BRRemoteActionKey value:1 atTime:7400.0 originator:5 eventDictionary:eventDictionary allowRetrigger:1];
+			[$BRWindow dispatchEvent:event];
+			free(buffer);
 			break;
 			
 		case KEY:
 			// individual key events
 			key_event = (key_event_t*) data;
 			key_event->down = key_event->down ? 1 : 0;
-			NSLog(@"Injecting single char: %@ (%x), down: %u", key_event->unicode, key_event->unicode, key_event->down);
+			// NSLog(@"Injecting single char: %C (%x), down: %u", key_event->unicode, key_event->unicode, key_event->down);
 			theChar = key_event->unicode;
 			text = [NSString stringWithCharacters:&theChar length:1];
 			eventDictionary = [NSDictionary dictionaryWithObject:text forKey:@"kBRKeyEventCharactersKey"];
@@ -62,7 +68,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 		case REMOTE:
 			// simple remote actions
 			remote_action = (remote_action_t*) data;
-			NSLog(@"Injecting action: %d down: %u", remote_action->down, remote_action->action);
+			// NSLog(@"Injecting action: %d down: %u", remote_action->down, remote_action->action);
 			remote_action->down = remote_action->down ? 1 : 0;
 			event = [$BREvent eventWithAction:remote_action->action value:remote_action->down atTime:7400.0 originator:5 eventDictionary:nil allowRetrigger:1];
 			[$BRWindow dispatchEvent:event];
@@ -74,12 +80,14 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 	return NULL;  // as stated in header, both data and returnData will be released for us after callback returns
 }
 
+#if 0
 %hook BRWindow
 + (BOOL)dispatchEvent:(id)event { 
     NSLog(@"dispatchEvent with event:%@", event);
     return %orig;
 }
 %end
+#endif
 
 %hook LTAppDelegate
 -(void)applicationDidFinishLaunching:(id)fp8 {
