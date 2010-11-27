@@ -67,15 +67,15 @@ typedef struct remote_action {
 } remote_action_t;
 
 typedef struct mouse_event {
-    HID_MOUSE_TYPE_t type;
+    hid_mouse_type_t type;
     float x;
     float y;
     uint16_t button;
 } mouse_event_t;
 
 typedef struct touche_vent {
-	uint16_t  num_touches;
-	HID_Touch touches[0];  
+	uint16_t     num_touches;
+	hid_touch_t touches[0];  
 } touch_event_t;
 
 typedef struct accelerometer {
@@ -84,13 +84,13 @@ typedef struct accelerometer {
     float z;
 } accelerometer_t;
 
-typedef union hid_event_type {
-    char   text[0];
-    struct KeyEvent      keyEvent;
-    struct RemoteAction  remoteAction;
-    struct MousePointer  mosuePointer;
-    struct Accelerometer accelerometer;   
-	struct TouchEvent    touchEvent;
+typedef union hid_event {
+    char            text[0];
+    key_event_t     key_event;
+    mouse_event_t   mouse_event;
+	touch_event_t   touch_event;
+    remote_action_t remote_action;
+    accelerometer_t acceleometer;   
 } hid_event_t;
 	
 #if defined __cplusplus
