@@ -8,6 +8,9 @@
 #include <objc/runtime.h>
 #include "../hid-support-internal.h"
 
+#define KEYCODE_RETURN     '\n'
+#define KEYCODE_ESCAPE      27
+
 @interface BRWindow : NSObject
 + (BOOL)dispatchEvent:(id)event;    // 0x315d47b5
 @end
@@ -19,6 +22,31 @@
 static Class $BREvent  = objc_getClass("BREvent");
 static Class $BRWindow = objc_getClass("BRWindow");
 
+static void injectRemoteAction(int action, int down){
+    // NSLog(@"Injecting action: %d down: %u", action, down);
+    BREvent * event = [$BREvent eventWithAction:action value:down atTime:7400.0 originator:5 eventDictionary:nil allowRetrigger:1];
+    [$BRWindow dispatchEvent:event];
+}
+
+static BRRemoteAction_t getRemoteActionForKey(uint16_t key){
+    switch (key){
+        case KEYCODE_ESCAPE:
+            return BRRemoteActionMenu;
+        case KEYCODE_RETURN:
+            return BRRemoteActionSelect;
+        case NSRightArrowFunctionKey:
+            return BRRemoteActionRight;
+        case NSLeftArrowFunctionKey:
+            return BRRemoteActionLeft;
+        case NSDownArrowFunctionKey:
+            return BRRemoteActionDown;
+        case NSUpArrowFunctionKey:
+            return BRRemoteActionUp;
+        default:
+            return BRRemoteActionInvalid;
+    }
+}
+
 static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfData, void *info) {
 	NSLog(@"hidsupport callback, msg %u", msgid);
     const char *data = (const char *) CFDataGetBytePtr(cfData);
@@ -26,6 +54,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 	char *buffer;
     NSString * text;
     BREvent *event = nil;
+    BRRemoteAction_t action;
 	NSDictionary * eventDictionary;
 	// have pointers ready
     key_event_t     * key_event;
@@ -58,6 +87,16 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 			key_event = (key_event_t*) data;
 			key_event->down = key_event->down ? 1 : 0;
 			// NSLog(@"Injecting single char: %C (%x), down: %u", key_event->unicode, key_event->unicode, key_event->down);
+			// map special keys to remote actions
+			action = getRemoteActionForKey(key_event->unicode);
+			if (action){
+                injectRemoteAction(action, key_event->down);
+                break;
+			}
+			
+			// regular chars don't support repeat and no up events are used
+			if (!key_event->down) break;
+			
 			theChar = key_event->unicode;
 			text = [NSString stringWithCharacters:&theChar length:1];
 			eventDictionary = [NSDictionary dictionaryWithObject:text forKey:@"kBRKeyEventCharactersKey"];
@@ -66,12 +105,10 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 			break;
 			
 		case REMOTE:
-			// simple remote actions
+			// simple remote action
 			remote_action = (remote_action_t*) data;
-			// NSLog(@"Injecting action: %d down: %u", remote_action->down, remote_action->action);
 			remote_action->down = remote_action->down ? 1 : 0;
-			event = [$BREvent eventWithAction:remote_action->action value:remote_action->down atTime:7400.0 originator:5 eventDictionary:nil allowRetrigger:1];
-			[$BRWindow dispatchEvent:event];
+			injectRemoteAction(remote_action->action, remote_action->down);
 			break;
 			
 		default:
