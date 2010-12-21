@@ -90,8 +90,9 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 			// map special keys to remote actions
 			action = getRemoteActionForKey(key_event->unicode);
 			if (action){
+                if (action == BRRemoteActionMenu   &&  key_event->down) break; // ignore Menu down
+                if (action == BRRemoteActionSelect && !key_event->down) break; // ignore Select up
                 injectRemoteAction(action, key_event->down);
-                break;
 			}
 			
 			// regular chars don't support repeat and no up events are used
