@@ -119,8 +119,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 			key_event->down = key_event->down ? 1 : 0;
 			// NSLog(@"Injecting single char: %C (%x), down: %u", key_event->unicode, key_event->unicode, key_event->down);
 			// map special keys to remote actions
-			action = getRemoteActionForKey(key_event->unicode);
-            if(action==BRRemoteActionSelect &&  //Check if it's select
+            if(key_event->unicode==KEYCODE_RETURN &&  //Check if it's select
                key_event->down)                 //Check if it's a down press
             {
                 id c = [[[$BRApplicationStackManager singleton] stack] peekController];
@@ -131,6 +130,8 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
                 }
                 
             }
+			action = getRemoteActionForKey(key_event->unicode);
+
 			if (action){
                 if (action == BRRemoteActionMenu   &&  key_event->down) break; // ignore Menu down
                 if (action == BRRemoteActionSelect && !key_event->down) break; // ignore Select up
@@ -151,14 +152,14 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
                     [c isKindOfClass:$BRMainMenuController]) && 
                     ![c isKindOfClass:$BRTextEntryController])
                 {
-                    NSIndexSet *v = [[c controls]indexesOfObjectsPassingTest:^(id obj, NSUInteger idx, BOOL *stop) {
+                    NSInteger v = [[c controls]indexOfObjectPassingTest:^(id obj, NSUInteger idx, BOOL *stop) {
                                                                                                                 if ([obj isKindOfClass:$BRTextEntryControl]) {
                                                                                                                     *stop = YES;
                                                                                                                     return YES;
                                                                                                                 }
                                                                                                                 return NO;
                                                                                                                 }];
-                    if(![v count])
+                    if(v!=NSNotFound)
                     {
                         injectRemoteAction(BRRemoteActionSelect,1);
                         break;
