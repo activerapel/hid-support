@@ -126,9 +126,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
                 id c = [[[$BRApplicationStackManager singleton] stack] peekController];
                 if([c isKindOfClass:$BRTextEntryController])
                 {
-                    id ctrl = [c editor];
-                    [ctrl _invokeInputActionWithDictionary:[NSDictionary dictionaryWithObject:@"_inputActionEscape:" forKey:@"Action"]];
-                    //[ctrl deviceKeyboardClose];
+                    [[c editor] _invokeInputActionWithDictionary:[NSDictionary dictionaryWithObject:@"_inputActionEscape:" forKey:@"Action"]];
                     break;
                 }
                 
@@ -162,8 +160,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
                                                                                                                 }];
                     if(![v count])
                     {
-                        event = [$BREvent eventWithAction:BRRemoteActionSelect value:1 atTime:7400.0 originator:5 eventDictionary:nil allowRetrigger:1];
-                        [$BRWindow dispatchEvent:event];
+                        injectRemoteAction(BRRemoteActionSelect,1);
                         break;
                     }
 
