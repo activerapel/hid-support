@@ -43,6 +43,14 @@
 @interface BRTextEntryController:NSObject
 @property(readonly, retain) BRTextEntryControl *editor;
 @end
+@interface BRSettingsFacade:NSObject
++ (id)singleton;
+- (id)versionOS;	// 0x31648ce1
+- (id)versionOSBuild;	// 0x31648ce5
+- (id)versionSoftware;	// 0x3158f455
+- (id)versionSoftwareBuild;
+@end
+static Class $BRSettingsFacade          = objc_getClass("BRSettingsFacade");
 static Class $BRMainMenuController      = objc_getClass("BRMainMenuController");
 static Class $BREvent                   = objc_getClass("BREvent");
 static Class $BRWindow                  = objc_getClass("BRWindow");
@@ -114,6 +122,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 			break;
 			
 		case KEY:
+        {
 			// individual key events
 			key_event = (key_event_t*) data;
 			key_event->down = key_event->down ? 1 : 0;
@@ -159,7 +168,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
                                                                                                                 }
                                                                                                                 return NO;
                                                                                                                 }];
-                    if(v!=NSNotFound)
+                    if(v==NSNotFound)
                     {
                         injectRemoteAction(BRRemoteActionSelect,1);
                         break;
@@ -167,10 +176,24 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 
                 }
             }
+            NSString *osBuild = [[$BRSettingsFacade singleton]versionOSBuild];
+            int dicEventKeyCode = 48;
+            if([osBuild isEqualToString:@"8M89"])
+                dicEventKeyCode = 47;
+            else if([osBuild isEqualToString:@"8C154"]||[osBuild isEqualToString:@"8C150"])
+                dicEventKeyCode = 48;
+                
+//            id settings = [$BRSettingsFacade singleton];
+//            NSLog(@"os %@ os build %@ software %@ software build %@",
+//            [settings versionOS], 
+//            [settings versionOSBuild], 
+//            [settings versionSoftware], 
+//            [settings versionSoftwareBuild]);
 			eventDictionary = [NSDictionary dictionaryWithObject:text forKey:@"kBRKeyEventCharactersKey"];
-			event = [$BREvent eventWithAction:BRRemoteActionKey value:key_event->down atTime:7400.0 originator:5 eventDictionary:eventDictionary allowRetrigger:1];
+			event = [$BREvent eventWithAction:dicEventKeyCode value:key_event->down atTime:7400.0 originator:5 eventDictionary:eventDictionary allowRetrigger:1];
 			[$BRWindow dispatchEvent:event];
 			break;
+            }
 			
 		case REMOTE:
 			// simple remote action
@@ -185,14 +208,12 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 	return NULL;  // as stated in header, both data and returnData will be released for us after callback returns
 }
 
-#if 0
 %hook BRWindow
 + (BOOL)dispatchEvent:(id)event { 
     NSLog(@"dispatchEvent with event:%@", event);
     return %orig;
 }
 %end
-#endif
 
 %hook LTAppDelegate
 -(void)applicationDidFinishLaunching:(id)fp8 {
