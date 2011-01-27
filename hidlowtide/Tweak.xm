@@ -1,8 +1,6 @@
 /**
  * Text injection and remote simulation
- * mach server: ch.ringwald.hidrelay
- * msg id 0: inject UTF8 text
- * msd id x: send action x
+ * mach server: ch.ringwald.hidsupport
  */
  
 #include <objc/runtime.h>
@@ -110,7 +108,9 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
             if (dataLen == 0 || !data) break;
             // append \0 byte for NSString conversion
             buffer = (char*) malloc( dataLen + 1);
-            if (!buffer); break;
+            if (!buffer) {
+                break;
+            }
             memcpy(buffer, data, dataLen);
             buffer[dataLen] = 0;
             text = [NSString stringWithUTF8String:buffer];
