@@ -10,6 +10,7 @@ void hid_inject_mouse_rel_move_test(int buttons, float dx, float dy){
 
 int main(int argc, char **argv, char **envp) {
 	
+#if 0
 	printf("Simulating left & right swipes until CTRL-C\n");
 	
 	float last_x = 0;
@@ -24,6 +25,14 @@ int main(int argc, char **argv, char **envp) {
 		hid_inject_mouse_rel_move(1, (new_x-last_x) * 100, 0);
 		last_x = new_x;
 	}
+#endif
+	
+#if 1
+	if (argc > 1) {
+		hid_inject_text(argv[1]);
+	}
+#endif
+	
 	return 0;
 }
 

@@ -18,6 +18,9 @@
 
 #include "../hid-support-internal.h"
 
+extern "C" uint64_t GSCurrentEventTimestamp(void);
+extern "C" GSEventRef _GSCreateSyntheticKeyEvent(UniChar key, BOOL up, BOOL repeating);
+
 // used interface from CAWindowServer & CAWindowServerDisplay
 @interface CAWindowServer : NSObject
 + (id)serverIfRunning;
@@ -38,6 +41,10 @@ typedef enum __GSHandInfoType2 {
 static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfData, void *info);
 
 // globals
+
+// GS functions
+GSEventRef (*$GSEventCreateKeyEvent)(int, CGPoint, CFStringRef, CFStringRef, id, UniChar, short, short);
+GSEventRef (*$GSCreateSyntheticKeyEvent)(UniChar, BOOL, BOOL);
 
 // GSEvent being sent
 static uint8_t  touchEvent[sizeof(GSEventRecord) + sizeof(GSHandInfo) + sizeof(GSPathInfo)];
@@ -61,10 +68,21 @@ static void dlset(Type_ &function, const char *name) {
     function = reinterpret_cast<Type_>(dlsym(RTLD_DEFAULT, name));
 }
 
-// support for OS < 3
-static void FixRecord(GSEventRecord *record) {
-    if (Level_ < 1)
+// project GSEventRecord for OS < 3 if needed
+void detectOSLevel(){
+    if (dlsym(RTLD_DEFAULT, "GSKeyboardCreate")) {
+        Level_ = 2;
+    } else if (dlsym(RTLD_DEFAULT, "GSEventGetWindowContextId")) {
+        Level_ = 1;
+    } else {
+        Level_ = 0;
+    }
+}
+
+void FixRecord(GSEventRecord *record) {
+    if (Level_ < 1) {
         memmove(&record->windowContextId, &record->windowContextId + 1, sizeof(*record) - (reinterpret_cast<uint8_t *>(&record->windowContextId + 1) - reinterpret_cast<uint8_t *>(record)) + record->infoSize);
+    }
 }
 
 static float box(float min, float value, float max){
@@ -95,7 +113,7 @@ static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
     }
     
     if (port) {
-        FixRecord(eventRecord);
+        // FixRecord(eventRecord);
         GSSendEvent(eventRecord, port);
     }
     
@@ -119,7 +137,7 @@ static void postMouseEvent(float x, float y, int click){
 
     static int prev_click = 0;
 
-    CGPoint location = {x, y};
+    CGPoint location = CGPointMake(x, y);
 
     // structure of touch GSEvent
     struct GSTouchEvent {
@@ -145,19 +163,48 @@ static void postMouseEvent(float x, float y, int click){
     sendGSEvent( (GSEventRecord*) event, location);    
 }
 
+static void postKeyEvent(int down, unichar unicode){
+    CGPoint location = CGPointMake(100, 100);
+    CFStringRef string = NULL;
+    GSEventRef  event  = NULL;
+    GSEventType type = down ? kGSEventKeyDown : kGSEventKeyUp;
+    if ($GSEventCreateKeyEvent) {           // >= 3.2 
+        string = CFStringCreateWithCharacters(kCFAllocatorDefault, &unicode, 1);
+        // NSLog(@"GSEventCreateKeyEvent type %u for %@", type, string);
+        event = (*$GSEventCreateKeyEvent)(type, location, string, string, nil, 0, 0, 1);
+    } else if ($GSCreateSyntheticKeyEvent && down) { // < 3.2 - no up events
+        // NSLog(@"GSCreateSyntheticKeyEvent down %u for %C", down, unicode);
+        event = (*$GSCreateSyntheticKeyEvent)(unicode, down, YES);
+        GSEventRecord *record((GSEventRecord*) _GSEventGetGSEventRecord(event));
+        record->type = kGSEventSimulatorKeyDown;
+    } else return;
+
+    // send GSEvent
+    sendGSEvent((GSEventRecord*) _GSEventGetGSEventRecord(event), location);
+    
+    if (string){
+        CFRelease(string);
+    }
+    CFRelease(event);
+}
+
 %hook SpringBoard
 
 -(void)applicationDidFinishLaunching:(id)fp8 {
 
     %orig;
 
+    // GraphicsServices used
     MSHookSymbol(GSTakePurpleSystemEventPort, "GSGetPurpleSystemEventPort");
     if (GSTakePurpleSystemEventPort == NULL) {
         MSHookSymbol(GSTakePurpleSystemEventPort, "GSCopyPurpleSystemEventPort");
         PurpleAllocated = true;
     }
+	dlset($GSEventCreateKeyEvent, "GSEventCreateKeyEvent");
+    dlset($GSCreateSyntheticKeyEvent, "_GSCreateSyntheticKeyEvent");
+    detectOSLevel();
 
-    // Setup a mach port for sending mouse events from outside of SpringBoard
+    // Setup a mach port for receiving mouse events from outside of SpringBoard
     // NOTE (by ashikase): Using kCFRunLoopDefaultMode causes issues when dragging SpringBoard's
     //       scrollview; why kCFRunLoopCommonModes fixes the issue, I do not know.
     CFMessagePortRef local = CFMessagePortCreateLocal(NULL, CFSTR(HID_SUPPORT_PORT_NAME), myCallBack, NULL, false);
@@ -181,12 +228,12 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 
     //NSLog(@"hidsupport callback, msg %u", msgid);
     const char *data = (const char *) CFDataGetBytePtr(cfData);
-    // UInt16 dataLen = CFDataGetLength(cfData);
-    // char *buffer;
-    // NSString * text;
-    // NSDictionary * eventDictionary;
+    uint16_t dataLen = CFDataGetLength(cfData);
+    char *buffer;
+    NSString * text;
+    unsigned int i;
     // have pointers ready
-    // key_event_t     * key_event;
+    key_event_t     * key_event;
     // remote_action_t * remote_action;
     // unichar           theChar;
     mouse_event_t   * mouse_event;
@@ -194,6 +241,32 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
     // accelerometer_t * acceleometer;
        
     switch ( (hid_event_type_t) msgid){
+        case TEXT:
+            // regular text
+            if (dataLen == 0 || !data) break;
+            // append \0 byte for NSString conversion
+            buffer = (char*) malloc(dataLen + 1);
+            if (!buffer) {
+                break;
+            }
+            memcpy(buffer, data, dataLen);
+            buffer[dataLen] = 0;
+            text = [NSString stringWithUTF8String:buffer];
+            for (i=0; i< [text length]; i++){
+                // NSLog(@"TEXT: sending %C", [text characterAtIndex:i]);
+                postKeyEvent(1, [text characterAtIndex:i]);
+                postKeyEvent(0, [text characterAtIndex:i]);
+            }
+            free(buffer);
+            break;
+            
+        case KEY:
+            // individual key events
+            key_event = (key_event_t*) data;
+            key_event->down = key_event->down ? 1 : 0;
+            postKeyEvent(key_event->down, key_event->unicode);
+            break;
+            
         case MOUSE:
             mouse_event = (mouse_event_t*) data;
             if (mouse_event->type != REL_MOVE) break;
