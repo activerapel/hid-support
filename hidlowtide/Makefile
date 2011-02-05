@@ -1,3 +1,5 @@
+SDKVERSION=4.1
+
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = hidlowtide
