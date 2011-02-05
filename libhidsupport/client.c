@@ -34,6 +34,8 @@
 
 #include "../hid-support-internal.h"
 
+#define INVALID_RESULT -5
+
 static CFMessagePortRef hid_support_message_port = 0;
 
 static int hid_send_message(hid_event_type_t cmd, uint16_t dataLen, uint8_t *data, CFDataRef *resultData){
@@ -46,7 +48,10 @@ static int hid_send_message(hid_event_type_t cmd, uint16_t dataLen, uint8_t *dat
 		return kCFMessagePortIsInvalid;
 	}
 	// create and send message
-	CFDataRef cfData = CFDataCreate(NULL, data, dataLen);
+	CFDataRef cfData = NULL;
+	if (dataLen && data) {
+	   cfData = CFDataCreate(NULL, data, dataLen);
+    }
 	CFStringRef replyMode = NULL;
 	if (resultData) {
 		replyMode = kCFRunLoopDefaultMode;
@@ -132,5 +137,23 @@ int hid_inject_accelerometer(float x, float y, float z){
 	return hid_send_message(ACCELEROMETER, sizeof(event), (uint8_t*) &event, 0);
 }
 	
+int hid_get_screen_dimension(int *width, int *height){
+    CFDataRef resultData;
+    int result = hid_send_message(GET_SCREEN_DIMENSION, 0, NULL, &resultData);
+    if (result < 0) return result;
+    const dimension_t *dimension = (const dimension_t *) CFDataGetBytePtr(resultData);
+    uint16_t dataLen = CFDataGetLength(resultData);
+    if (!dimension) {
+        return INVALID_RESULT;
+    }
+    if (dataLen != sizeof(dimension_t)) {
+        CFRelease(resultData);
+        return INVALID_RESULT;
+    }
+    if (width)  *width  = dimension->width;
+    if (height) *height = dimension->height;
+    CFRelease(resultData);
+    return 0; 
+}
 
 

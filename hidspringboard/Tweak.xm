@@ -57,6 +57,10 @@ static float screen_height = 0;
 static float mouse_max_x = 0;
 static float mouse_max_y = 0;
 
+// Mouse position
+static float mouse_x = 0;
+static float mouse_y = 0;
+
 // access to system event server
 static mach_port_t (*GSTakePurpleSystemEventPort)(void);
 static bool PurpleAllocated;
@@ -188,8 +192,90 @@ static void postKeyEvent(int down, unichar unicode){
     CFRelease(event);
 }
 
-%hook SpringBoard
+static void handleMouseEvent(const mouse_event_t *mouse_event){
+    int buttons = mouse_event->buttons ? 1 : 0;
+    int new_mouse_x, new_mouse_y;
+    switch (mouse_event->type) {
+        case REL_MOVE:
+            new_mouse_x = mouse_x + mouse_event->x;
+            new_mouse_y = mouse_y + mouse_event->y;
+            break;
+        case ABS_MOVE:
+            new_mouse_x = mouse_event->x;
+            new_mouse_y = mouse_event->y;
+            break;
+        default:
+            return;
+    }
+    mouse_x = box(0, new_mouse_x, mouse_max_x);
+    mouse_y = box(0, new_mouse_y, mouse_max_y);
+    NSLog(@"MOUSE type %u, button %u, dx %f, dy %f", mouse_event->type, mouse_event->buttons, mouse_event->x, mouse_event->y);
+    postMouseEvent(mouse_x, mouse_y, buttons);
+}
 
+static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfData, void *info) {
+
+    //NSLog(@"hidsupport callback, msg %u", msgid);
+    const char *data = (const char *) CFDataGetBytePtr(cfData);
+    uint16_t dataLen = CFDataGetLength(cfData);
+    char *buffer;
+    NSString * text;
+    unsigned int i;
+    // have pointers ready
+    key_event_t     * key_event;
+    // remote_action_t * remote_action;
+    // unichar           theChar;
+    // touch_event_t   * touch_event;
+    // accelerometer_t * acceleometer;
+    dimension_t dimension_result;
+    CFDataRef returnData = NULL;
+    
+    switch ( (hid_event_type_t) msgid){
+        case TEXT:
+            // regular text
+            if (dataLen == 0 || !data) break;
+            // append \0 byte for NSString conversion
+            buffer = (char*) malloc(dataLen + 1);
+            if (!buffer) {
+                break;
+            }
+            memcpy(buffer, data, dataLen);
+            buffer[dataLen] = 0;
+            text = [NSString stringWithUTF8String:buffer];
+            for (i=0; i< [text length]; i++){
+                // NSLog(@"TEXT: sending %C", [text characterAtIndex:i]);
+                postKeyEvent(1, [text characterAtIndex:i]);
+                postKeyEvent(0, [text characterAtIndex:i]);
+            }
+            free(buffer);
+            break;
+            
+        case KEY:
+            // individual key events
+            key_event = (key_event_t*) data;
+            key_event->down = key_event->down ? 1 : 0;
+            postKeyEvent(key_event->down, key_event->unicode);
+            break;
+            
+        case MOUSE:
+            if (dataLen != sizeof(mouse_event_t) || !data) break;
+            handleMouseEvent((const mouse_event_t *) data);
+            break;
+            
+        case GET_SCREEN_DIMENSION:
+            dimension_result.width  = screen_width;
+            dimension_result.height = screen_height;
+            returnData = CFDataCreate(kCFAllocatorDefault, (const uint8_t*) &dimension_result, sizeof(dimension_t));
+            break;
+        
+        default:
+            NSLog(@"HID_SUPPORT_PORT_NAME server, msgid %u not supported", msgid);
+            break;
+    }
+    return returnData;  // as stated in header, both data and returnData will be released for us after callback returns
+}
+
+%hook SpringBoard
 -(void)applicationDidFinishLaunching:(id)fp8 {
 
     %orig;
@@ -221,65 +307,7 @@ static void postKeyEvent(int down, unichar unicode){
 }
 %end
 
-static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfData, void *info) {
+// Main init
+// __attribute__((constructor)) static void init(){
+// }
 
-    static float mouse_x = 0;
-    static float mouse_y = 0;
-
-    //NSLog(@"hidsupport callback, msg %u", msgid);
-    const char *data = (const char *) CFDataGetBytePtr(cfData);
-    uint16_t dataLen = CFDataGetLength(cfData);
-    char *buffer;
-    NSString * text;
-    unsigned int i;
-    // have pointers ready
-    key_event_t     * key_event;
-    // remote_action_t * remote_action;
-    // unichar           theChar;
-    mouse_event_t   * mouse_event;
-    // touch_event_t   * touch_event;
-    // accelerometer_t * acceleometer;
-       
-    switch ( (hid_event_type_t) msgid){
-        case TEXT:
-            // regular text
-            if (dataLen == 0 || !data) break;
-            // append \0 byte for NSString conversion
-            buffer = (char*) malloc(dataLen + 1);
-            if (!buffer) {
-                break;
-            }
-            memcpy(buffer, data, dataLen);
-            buffer[dataLen] = 0;
-            text = [NSString stringWithUTF8String:buffer];
-            for (i=0; i< [text length]; i++){
-                // NSLog(@"TEXT: sending %C", [text characterAtIndex:i]);
-                postKeyEvent(1, [text characterAtIndex:i]);
-                postKeyEvent(0, [text characterAtIndex:i]);
-            }
-            free(buffer);
-            break;
-            
-        case KEY:
-            // individual key events
-            key_event = (key_event_t*) data;
-            key_event->down = key_event->down ? 1 : 0;
-            postKeyEvent(key_event->down, key_event->unicode);
-            break;
-            
-        case MOUSE:
-            mouse_event = (mouse_event_t*) data;
-            if (mouse_event->type != REL_MOVE) break;
-            mouse_event->buttons = mouse_event->buttons ? 1 : 0;
-            mouse_x = box(0, mouse_x + mouse_event->x, mouse_max_x);
-            mouse_y = box(0, mouse_y + mouse_event->y, mouse_max_y);
-            // NSLog(@"MOUSE type %u, button %u, dx %f, dy %f", mouse_event->type, mouse_event->buttons, mouse_event->x, mouse_event->y);
-            postMouseEvent(mouse_x, mouse_y, mouse_event->buttons);
-            break;
-            
-        default:
-            NSLog(@"HID_SUPPORT_PORT_NAME server, msgid %u not supported", msgid);
-            break;
-    }
-    return NULL;  // as stated in header, both data and returnData will be released for us after callback returns
-}

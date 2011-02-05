@@ -47,7 +47,8 @@ typedef enum hid_event_type {
 	REMOTE,
 	MOUSE,
 	TOUCH,
-	ACCELEROMETER
+	ACCELEROMETER,
+	GET_SCREEN_DIMENSION = 0x100,
 } hid_event_type_t;
 
 typedef enum hid_mouse_type {
@@ -93,6 +94,11 @@ typedef union hid_event {
     remote_action_t remote_action;
     accelerometer_t acceleometer;   
 } hid_event_t;
+
+typedef struct dimension {
+	int width;
+	int height;
+} dimension_t;
 	
 #if defined __cplusplus
 }

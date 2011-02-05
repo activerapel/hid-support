@@ -153,6 +153,8 @@ int hid_inject_touches(uint8_t num_touches, hid_touch_t *touches);
 
 int hid_inject_accelerometer(float x, float y, float z);
 
+int hid_get_screen_dimension(int *width, int *height);
+							 
 #if defined __cplusplus
 }
 #endif
