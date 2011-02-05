@@ -27,11 +27,16 @@ int main(int argc, char **argv, char **envp) {
 	}
 #endif
 	
-#if 1
+#if 0
 	if (argc > 1) {
 		hid_inject_text(argv[1]);
 	}
 #endif
+	
+	printf("hidsupport test query screen dimension\n");
+	int width, height;
+	int result = hid_get_screen_dimension(&width, &height);
+	printf("Screen dimension: %u width, %u height (res=%d)\n", width, height, result);
 	
 	return 0;
 }
