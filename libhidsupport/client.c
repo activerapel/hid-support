@@ -38,26 +38,37 @@
 
 static CFMessagePortRef hid_support_message_port = 0;
 
-static int hid_send_message(hid_event_type_t cmd, uint16_t dataLen, uint8_t *data, CFDataRef *resultData){
-	// check for port
-	if (!hid_support_message_port || !CFMessagePortIsValid(hid_support_message_port)) {
+static void hid_message_port_refresh(){
+	// still valid
+	if (hid_support_message_port && !CFMessagePortIsValid(hid_support_message_port)){
+		CFRelease(hid_support_message_port);
+		hid_support_message_port = NULL;
+	}
+	// create new one
+	if (!hid_support_message_port) {
 		hid_support_message_port = CFMessagePortCreateRemote(NULL, CFSTR(HID_SUPPORT_PORT_NAME));
 	}
+}
+
+static int hid_send_message(hid_event_type_t cmd, uint16_t dataLen, uint8_t *data, CFDataRef *resultData){
+	// check for port
+	hid_message_port_refresh();
+	
 	if (!hid_support_message_port) {
 		printf("hid_send_message cannot find server" HID_SUPPORT_PORT_NAME "\n");
 		return kCFMessagePortIsInvalid;
 	}
+	
 	// create and send message
-	CFDataRef cfData = NULL;
-	if (dataLen && data) {
-	   cfData = CFDataCreate(NULL, data, dataLen);
-    }
+	CFDataRef cfData = CFDataCreate(NULL, data, dataLen);
 	CFStringRef replyMode = NULL;
 	if (resultData) {
 		replyMode = kCFRunLoopDefaultMode;
 	}
 	int result = CFMessagePortSendRequest(hid_support_message_port, cmd, cfData, 1, 1, replyMode, resultData);
-	CFRelease(cfData);
+	if (cfData) {
+		CFRelease(cfData);
+	}
 	return result;
 }
 
@@ -140,13 +151,14 @@ int hid_inject_accelerometer(float x, float y, float z){
 int hid_get_screen_dimension(int *width, int *height){
     CFDataRef resultData;
     int result = hid_send_message(GET_SCREEN_DIMENSION, 0, NULL, &resultData);
-    if (result < 0) return result;
+    if (result < 0) {
+        return result;
+    }
     const dimension_t *dimension = (const dimension_t *) CFDataGetBytePtr(resultData);
-    uint16_t dataLen = CFDataGetLength(resultData);
     if (!dimension) {
         return INVALID_RESULT;
     }
-    if (dataLen != sizeof(dimension_t)) {
+    if (CFDataGetLength(resultData) != sizeof(dimension_t)) {
         CFRelease(resultData);
         return INVALID_RESULT;
     }
