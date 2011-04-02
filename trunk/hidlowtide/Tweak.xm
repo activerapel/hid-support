@@ -205,12 +205,12 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
     return NULL;  // as stated in header, both data and returnData will be released for us after callback returns
 }
 
-%hook BRWindow
-+ (BOOL)dispatchEvent:(id)event { 
-    NSLog(@"dispatchEvent with event:%@", event);
-    return %orig;
-}
-%end
+// %hook BRWindow
+// + (BOOL)dispatchEvent:(id)event { 
+//     NSLog(@"dispatchEvent with event:%@", event);
+//     return %orig;
+// }
+// %end
 
 %hook LTAppDelegate
 -(void)applicationDidFinishLaunching:(id)fp8 {
