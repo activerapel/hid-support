@@ -30,6 +30,16 @@ extern "C" GSEventRef _GSCreateSyntheticKeyEvent(UniChar key, BOOL up, BOOL repe
 - (unsigned int)clientPortAtPosition:(struct CGPoint)fp8;
 @end
 
+#if !defined(__IPHONE_3_2) || __IPHONE_3_2 > __IPHONE_OS_VERSION_MAX_ALLOWED
+typedef enum {
+    UIUserInterfaceIdiomPhone,           // iPhone and iPod touch style UI
+    UIUserInterfaceIdiomPad,             // iPad style UI
+} UIUserInterfaceIdiom;
+@interface UIDevice (privateAPI)
+- (BOOL) userInterfaceIdiom;
+@end
+#endif
+
 // types for touches
 typedef enum __GSHandInfoType2 {
         kGSHandInfoType2TouchDown    = 1,    // first down
@@ -65,6 +75,9 @@ static float mouse_y = 0;
 static mach_port_t (*GSTakePurpleSystemEventPort)(void);
 static bool PurpleAllocated;
 static int Level_;  // < 3.0, 3.0-3.1.x, 3.2+
+
+// iPad support
+static int is_iPad = 0;
 
 
 template <typename Type_>
@@ -103,8 +116,17 @@ static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
     if (CAWindowServer *server = [CAWindowServer serverIfRunning]) {
         NSArray *displays([server displays]);
         if (displays != nil && [displays count] != 0){
-            if (CAWindowServerDisplay *display = [displays objectAtIndex:0]) {
-                port = [display clientPortAtPosition:point];
+            if (CAWindowServerDisplay *display = [displays objectAtIndex:0]) { 
+               if (is_iPad) {
+                    CGPoint point2;
+                    point2.x = screen_height - 1 - point.y;
+                    point2.y = point.x;
+                    port = [display clientPortAtPosition:point2];
+                    // NSLog(@"display port iPad: %x", (int) port_);
+                } else {
+                    port = [display clientPortAtPosition:point];
+                    // NSLog(@"display port non-wildcat: %x", (int) port_);
+                }
             }
         }
     }
@@ -209,7 +231,7 @@ static void handleMouseEvent(const mouse_event_t *mouse_event){
     }
     mouse_x = box(0, new_mouse_x, mouse_max_x);
     mouse_y = box(0, new_mouse_y, mouse_max_y);
-    NSLog(@"MOUSE type %u, button %u, dx %f, dy %f", mouse_event->type, mouse_event->buttons, mouse_event->x, mouse_event->y);
+    // NSLog(@"MOUSE type %u, button %u, dx %f, dy %f", mouse_event->type, mouse_event->buttons, mouse_event->x, mouse_event->y);
     postMouseEvent(mouse_x, mouse_y, buttons);
 }
 
@@ -304,6 +326,11 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
     screen_height = rect.size.height;
     mouse_max_x = screen_width - 1;
     mouse_max_y = screen_height - 1;
+    
+    // iPad has rotated framebuffer
+    if ([[UIDevice currentDevice] respondsToSelector:@selector(userInterfaceIdiom)]){
+        is_iPad = [[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad;
+    }
 }
 %end
 
