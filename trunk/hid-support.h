@@ -126,7 +126,11 @@ typedef enum BRRemoteAction {
 	BRRemoteActionPlay    = 10,
 	BRRemoteActionKey     = 47	// used in hid_inject_text, cannot be used in hid_inject_remote_action_x
 } BRRemoteAction_t;
-	
+
+typedef enum HWButton {
+    HWButtonHome = 0
+} HWButton_t;
+    
 typedef struct hid_touch {
 	float x;
 	float y;
@@ -144,6 +148,9 @@ int hid_inject_key_up(uint32_t unicode);
 
 int hid_inject_remote_down(uint16_t action);
 int hid_inject_remote_up(uint16_t action);
+
+int hid_inject_button_down(uint16_t action);
+int hid_inject_button_up(uint16_t action);
 
 int hid_inject_mouse_keep_alive();
 int hid_inject_mouse_rel_move(uint8_t buttons, float dx, float dy);

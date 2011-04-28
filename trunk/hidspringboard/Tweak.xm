@@ -235,6 +235,22 @@ static void handleMouseEvent(const mouse_event_t *mouse_event){
     postMouseEvent(mouse_x, mouse_y, buttons);
 }
 
+static void handleButtonEvent(const button_event_t *button_event){
+    struct GSEventRecord record;
+    memset(&record, 0, sizeof(record));
+    record.timestamp = GSCurrentEventTimestamp();
+    
+    switch (button_event->action){
+        case HWButtonHome:
+            // Simulate Home button press
+            record.type = (button_event->down) != 0 ? kGSEventMenuButtonDown : kGSEventMenuButtonUp;
+            GSSendSystemEvent(&record);
+            break;
+        default:
+            break;
+    }
+}
+
 static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfData, void *info) {
 
     //NSLog(@"hidsupport callback, msg %u", msgid);
@@ -284,6 +300,11 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
             handleMouseEvent((const mouse_event_t *) data);
             break;
             
+        case BUTTON:
+            if (dataLen != sizeof(button_event_t) || !data) break;
+              handleButtonEvent((const button_event_t *) data);
+              break;
+                    
         case GET_SCREEN_DIMENSION:
             dimension_result.width  = screen_width;
             dimension_result.height = screen_height;
