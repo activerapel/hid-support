@@ -42,3 +42,9 @@ It will provide the following HID support actions (with command id):
 
   * Accelerometer (0x06)
     * Data: float x/y/z
+
+  * Button up/down (0x07)
+
+   * Assumption: users e.g. sends down and up if she wants a single move left
+   * Data: uint16_t down flag
+   * Data: uint32_t enum of e.g. HWHomeButton
