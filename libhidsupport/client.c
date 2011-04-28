@@ -106,6 +106,20 @@ int hid_inject_remote_up(uint16_t action){
 	return hid_send_message(KEY, sizeof(event), (uint8_t*) &event, 0);
 }
 
+int hid_inject_button_down(uint16_t action){
+	button_event_t event;
+	event.down   = 1;
+	event.action = action;
+	return hid_send_message(BUTTON, sizeof(event), (uint8_t*) &event, 0);
+}
+
+int hid_inject_button_up(uint16_t action){
+	button_event_t event;
+	event.down   = 0;
+	event.action = action;
+	return hid_send_message(BUTTON, sizeof(event), (uint8_t*) &event, 0);
+}
+
 int hid_inject_mouse_keep_alive(){
 	mouse_event_t event;
 	event.type = KEEP_ALIVE;

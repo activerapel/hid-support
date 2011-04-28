@@ -1,4 +1,4 @@
-SDKVERSION=4.1
+SDKVERSION=4.0
 
 include $(THEOS)/makefiles/common.mk
 
