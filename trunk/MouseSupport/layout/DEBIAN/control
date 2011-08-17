@@ -1,0 +1,13 @@
+Package: jp.ashikase.mousesupport
+Name: MouseSupport
+Version: svn.r203
+Architecture: iphoneos-arm
+Description: Pointer and external input extension
+Homepage: http://code.google.com/p/hid-support
+Depiction: http://moreinfo.thebigboss.org/moreinfo/depiction.php?file=mousesupportData
+Maintainer: BigBoss <bigboss@thebigboss.org>
+Author: Mattthias Ringwald <iphone@ringwald.ch>
+Section: System
+Depends: mobilesubstrate, firmware (>=3.0), preferenceloader
+Sponsor: thebigboss.org <http://thebigboss.org>
+Tag: role::hacker

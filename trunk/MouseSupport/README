@@ -1,0 +1,8 @@
+MouseSupport was created by Lance Fetter (ashikase) and is hosted in his iphone-tweaks googe code project.
+
+Source code at http://code.google.com/p/iphone-tweaks/source/browse/#svn%2Ftrunk%2FMouseSupport
+
+The new maintainer of MouseSupport is now Matthias Ringwald (mringwal), who added fixes for newer OS versions. MouseSupport is provided/updated until BTstack Mouse will be rewritten and integrated in an upcoming BTstack Keyboard++ solution. 
+
+New software should use hid-support, which doesn't provide a visible mouse pointer yet, but can simulate touches and inject key events.
+
