@@ -163,6 +163,8 @@ static void postMouseEvent(float x, float y, int click){
 
     static int prev_click = 0;
 
+    if (!click && !prev_click) return;
+
     CGPoint location = CGPointMake(x, y);
 
     // structure of touch GSEvent
@@ -186,7 +188,9 @@ static void postMouseEvent(float x, float y, int click){
     event->handInfo.pathInfos[0].pathLocation  = location;
 
     // send GSEvent
-    sendGSEvent( (GSEventRecord*) event, location);    
+    sendGSEvent( (GSEventRecord*) event, location);  
+    
+    prev_click = click;  
 }
 
 static void postKeyEvent(int down, unichar unicode){
@@ -215,7 +219,6 @@ static void postKeyEvent(int down, unichar unicode){
 }
 
 static void handleMouseEvent(const mouse_event_t *mouse_event){
-    int buttons = mouse_event->buttons ? 1 : 0;
     int new_mouse_x, new_mouse_y;
     switch (mouse_event->type) {
         case REL_MOVE:
@@ -231,6 +234,8 @@ static void handleMouseEvent(const mouse_event_t *mouse_event){
     }
     mouse_x = box(0, new_mouse_x, mouse_max_x);
     mouse_y = box(0, new_mouse_y, mouse_max_y);
+
+    int buttons = mouse_event->buttons ? 1 : 0;
     // NSLog(@"MOUSE type %u, button %u, dx %f, dy %f", mouse_event->type, mouse_event->buttons, mouse_event->x, mouse_event->y);
     postMouseEvent(mouse_x, mouse_y, buttons);
 }
