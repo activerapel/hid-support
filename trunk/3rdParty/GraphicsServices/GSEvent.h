@@ -33,7 +33,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef GSEVENT_H
 #define GSEVENT_H
 
-#include "GSWindow.h"
+// instad of adding GSWindow header, we just define it as a void *
+// #include "GSWindow.h"
+typedef void * GSWindowRef;
+
 #include <mach/message.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreGraphics/CoreGraphics.h>
