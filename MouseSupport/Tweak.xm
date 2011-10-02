@@ -2,7 +2,7 @@
  * New maintainer/developer: Matthias Ringwald (mringwal)
  * see README for details
  *
- * Current version: svn.r203
+ * Current version: svn.r204
  *
  */
 
@@ -133,6 +133,11 @@ typedef enum {
 - (BOOL)isWildcat;
 @end
 
+@interface UIScreen (fourZeroAndLater)
++(UIScreen*) mainScreen;
+@property(nonatomic,readonly) CGFloat scale;
+@end
+
 #define APP_ID "jp.ashikase.mousesupport"
 #define MACH_PORT_NAME APP_ID
 
@@ -150,7 +155,7 @@ static CGPoint lastMouseLocation = { 0, 0};
 // Define button values
 #define BUTTON_LOCK 0x02
 #define BUTTON_MENU 0x04
-static char buttonTwo = BUTTON_LOCK;
+static char buttonTwo   = BUTTON_LOCK;
 static char buttonThree = BUTTON_MENU;
 static BOOL swapButtonsTwoThree = NO;
 
@@ -159,6 +164,9 @@ static BOOL cloakingSupport = NO;
 
 // iPad support
 static BOOL is_iPad = NO;
+
+// Window server uses bitmap coordinates
+static float retina_factor = 1.0f;
 
 // Pointer orientation
 static int orientation_ = 0;
@@ -443,7 +451,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
             // Button down and was not down before
             port_ = 0;
 
-            NSLog(@"point %f,%f - mouseView.origin %f,%f (o=%d)", point.x, point.y, mouseView.origin.x, mouseView.origin.y, orientation_);
+            // NSLog(@"point %f,%f - mouseView.origin %f,%f (o=%d)", point.x, point.y, mouseView.origin.x, mouseView.origin.y, orientation_);
 
             if (!cloakingSupport){
                 if (point.x >= 1.0) point.x -= 1.0f;
@@ -454,16 +462,18 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
                 NSArray *displays([server displays]);
                 if (displays != nil && [displays count] != 0) {
                     if (CAWindowServerDisplay *display = [displays objectAtIndex:0]) {
+                        CGPoint point2;
                         if (is_iPad) {
-                            CGPoint point2;
                             point2.x = screen_height - 1 - point.y;
                             point2.y = point.x;
-                            port_ = [display clientPortAtPosition:point2];
-                            NSLog(@"orientation %d, screen (%f, %f), coord (%f, %f), coord2 (%f,%f) -> port %x", orientation_, screen_width, screen_height, point.x, point.y, point2.x, point2.y, (int) port_);
                         } else {
-                            port_ = [display clientPortAtPosition:event.record.locationInWindow];
-                            NSLog(@"orientation %d, screen (%f, %f), coord (%f, %f) -> port %x", orientation_, screen_width, screen_height, point.x, point.y, (int) port_);
+                            point2.x = point.x;
+                            point2.y = point.y;
                         }
+                        point2.x *= retina_factor;
+                        point2.y *= retina_factor;
+                        port_ = [display clientPortAtPosition:point2];
+                        // NSLog(@"orientation %d, screen (%f, %f), coord (%f, %f), coord2 (%f,%f) -> port %x", orientation_, screen_width, screen_height, point.x, point.y, point2.x, point2.y, (int) port_);
                     }
                 }
             }
@@ -584,6 +594,8 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
    [self moveMousePointerToPoint:lastMouseLocation];
 }
 
+// NOTE: no need to detect retina display or iPad 
+
 %end 
 
 %end // GFirmware3x
@@ -618,6 +630,22 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
    [self moveMousePointerToPoint:lastMouseLocation];
 }
 
+-(void)applicationDidFinishLaunching:(id)fp8 {
+
+    %orig;
+    
+    // iPad has rotated framebuffer
+    if ([[UIDevice currentDevice] respondsToSelector:@selector(userInterfaceIdiom)]){
+        is_iPad = [[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad;
+    }
+
+    // handle retina devices (checks for iOS4.x)
+    if ([[UIScreen mainScreen] respondsToSelector:@selector(displayLinkWithTarget:selector:)]){
+        UIScreen *mainScreen = [UIScreen mainScreen];
+        retina_factor = mainScreen.scale;
+        NSLog(@" MouseSupport: retina factor %f", retina_factor);
+    }
+}
 %end
 
 %end // GFirmware32x
