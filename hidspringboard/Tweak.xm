@@ -47,6 +47,10 @@ typedef enum {
 @end
 #endif
 
+@interface UIScreen (fourZeroAndLater)
+@property(nonatomic,readonly) CGFloat scale;
+@end
+
 // types for touches
 typedef enum __GSHandInfoType2 {
         kGSHandInfoType2TouchDown    = 1,    // first down
@@ -69,6 +73,7 @@ static uint8_t  touchEvent[sizeof(GSEventRecord) + sizeof(GSHandInfo) + sizeof(G
 // Screen dimension
 static float screen_width = 0;
 static float screen_height = 0;
+static float retina_factor = 1.0f;
 
 // Mouse area (might be rotated)
 static float mouse_max_x = 0;
@@ -124,16 +129,18 @@ static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
         NSArray *displays([server displays]);
         if (displays != nil && [displays count] != 0){
             if (CAWindowServerDisplay *display = [displays objectAtIndex:0]) { 
+               CGPoint point2;
                if (is_iPad) {
-                    CGPoint point2;
                     point2.x = screen_height - 1 - point.y;
                     point2.y = point.x;
-                    port = [display clientPortAtPosition:point2];
-                    // NSLog(@"display port iPad: %x", (int) port_);
                 } else {
-                    port = [display clientPortAtPosition:point];
-                    // NSLog(@"display port non-wildcat: %x", (int) port_);
+                    point2.x = point.x;
+                    point2.y = point.y;
                 }
+                point2.x *= retina_factor;
+                point2.y *= retina_factor;
+                port = [display clientPortAtPosition:point2];
+                // NSLog(@"display port : %x", (int) port_);
             }
         }
     }
@@ -363,6 +370,12 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
     // iPad has rotated framebuffer
     if ([[UIDevice currentDevice] respondsToSelector:@selector(userInterfaceIdiom)]){
         is_iPad = [[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad;
+    }
+
+    // handle retina devices (checks for iOS4.x)
+    if ([[UIScreen mainScreen] respondsToSelector:@selector(displayLinkWithTarget:selector:)]){
+        retina_factor = [UIScreen mainScreen].scale;
+        NSLog(@"retina factor %f", retina_factor);
     }
 }
 %end
