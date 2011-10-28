@@ -99,13 +99,19 @@ static void dlset(Type_ &function, const char *name) {
 
 // project GSEventRecord for OS < 3 if needed
 void detectOSLevel(){
+    if (dlsym(RTLD_DEFAULT, "GSLibraryCopyGenerationInfoValueForKey")){
+        Level_ = 3;
+        return;
+    }
     if (dlsym(RTLD_DEFAULT, "GSKeyboardCreate")) {
         Level_ = 2;
-    } else if (dlsym(RTLD_DEFAULT, "GSEventGetWindowContextId")) {
-        Level_ = 1;
-    } else {
-        Level_ = 0;
+        return;
     }
+    if (dlsym(RTLD_DEFAULT, "GSEventGetWindowContextId")) {
+        Level_ = 1;
+        return;
+    }
+    Level_ = 0;
 }
 
 void FixRecord(GSEventRecord *record) {
@@ -194,7 +200,11 @@ static void postMouseEvent(float x, float y, int click){
     event->record.timestamp = GSCurrentEventTimestamp();
     event->record.infoSize = sizeof(GSHandInfo) + sizeof(GSPathInfo);
     event->handInfo.type = getHandInfoType(prev_click, click);
-    event->handInfo.pathInfosCount = 1;
+    if (Level_ >= 3){
+        event->handInfo.x52 = 1;
+    } else {
+    	event->handInfo.pathInfosCount = 1;
+    }
     bzero(&event->handInfo.pathInfos[0], sizeof(GSPathInfo));
     event->handInfo.pathInfos[0].pathIndex     = 1;
     event->handInfo.pathInfos[0].pathIdentity  = 2;
