@@ -78,6 +78,7 @@ extern "C" {
 		float _0x58;
 		unsigned char _0x5C;
 		unsigned char pathInfosCount;	// 0x22 == 0x5D
+        uint16_t x52;		
 		GSPathInfo pathInfos[0];		// 0x60
 	} GSHandInfo;	// sizeof = 0x24.
 	
