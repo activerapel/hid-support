@@ -111,7 +111,7 @@ typedef struct {} Context;
 - (void)deactivate;
 @end
 
-#if !defined(__IPHONE_3_2) || __IPHONE_3_2 > __IPHONE_OS_VERSION_MAX_ALLOWED
+// #if !defined(__IPHONE_3_2) || __IPHONE_3_2 > __IPHONE_OS_VERSION_MAX_ALLOWED
 typedef enum {
     UIUserInterfaceIdiomPhone,           // iPhone and iPod touch style UI
     UIUserInterfaceIdiomPad,             // iPad style UI
@@ -119,7 +119,7 @@ typedef enum {
 @interface UIDevice (privateAPI)
 - (BOOL) userInterfaceIdiom;
 @end
-#endif
+// #endif
 
 @interface UIView (Private)
 @property(assign) CGPoint origin;
@@ -164,6 +164,9 @@ static BOOL cloakingSupport = NO;
 
 // iPad support
 static BOOL is_iPad = NO;
+
+// iOS 5
+static BOOL is_50 = NO;
 
 // Window server uses bitmap coordinates
 static float retina_factor = 1.0f;
@@ -440,7 +443,11 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
         event.data.info.handInfo.x34 = 0x1;
         event.data.info.handInfo.x38 = tis ? 0x1 : 0x0;
 
-        event.data.info.pathPositions = 1;
+        if (is_50){
+            event.data.info.x52 = 1;
+        } else {
+            event.data.info.pathPositions = 1;
+        }
 
         event.data.path.x00 = 0x01;
         event.data.path.x01 = 0x02;
@@ -485,6 +492,8 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
                 port_ = purple;
             }
         }
+
+        // NSLog(@"point %f,%f - port %p", point.x, point.y, port_);
 
         GSSendEvent(&event.record, port_);
     }
@@ -760,12 +769,18 @@ __attribute__((constructor)) static void init()
     }
     
     Class $SpringBoard = objc_getClass("SpringBoard");
-    if (class_getInstanceMethod($SpringBoard, @selector(noteInterfaceOrientationChanged:)) != NULL)
+    if (class_getInstanceMethod($SpringBoard, @selector(noteInterfaceOrientationChanged:))) {
         // Firmware >= 3.2
         %init(GFirmware32x);
-    else
+    } else {
         // Firmware < 3.2
         %init(GFirmware3x);
+    }
+
+    if (dlsym(RTLD_DEFAULT, "GSLibraryCopyGenerationInfoValueForKey")){
+        is_50 = YES;
+    }
+    NSLog(@"is_50 = %u");
 
     %init;
 }
