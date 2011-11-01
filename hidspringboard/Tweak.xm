@@ -64,7 +64,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 // globals
 
 // GS functions
-GSEventRef (*$GSEventCreateKeyEvent)(int, CGPoint, CFStringRef, CFStringRef, id, UniChar, short, short);
+GSEventRef (*$GSEventCreateKeyEvent)(int, CGPoint, CFStringRef, CFStringRef, uint32_t, UniChar, short, short);
 GSEventRef (*$GSCreateSyntheticKeyEvent)(UniChar, BOOL, BOOL);
 
 // GSEvent being sent
@@ -217,20 +217,25 @@ static void postMouseEvent(float x, float y, int click){
     prev_click = click;  
 }
 
-static void postKeyEvent(int down, unichar unicode){
+static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
     CGPoint location = CGPointMake(100, 100);
     CFStringRef string = NULL;
     GSEventRef  event  = NULL;
     GSEventType type = down ? kGSEventKeyDown : kGSEventKeyUp;
-    if ($GSEventCreateKeyEvent) {           // >= 3.2 
+    uint32_t flags = (GSEventFlags) 0;
+    if (modifier == CMD){
+        flags |= 1 << 16;
+    }
+    if ($GSEventCreateKeyEvent) {           // >= 3.2
+        // NSLog(@"GSEventCreateKeyEvent type %u for %@ with flags %08x", type, modifier, string, flags); 
         string = CFStringCreateWithCharacters(kCFAllocatorDefault, &unicode, 1);
-        // NSLog(@"GSEventCreateKeyEvent type %u for %@", type, string);
-        event = (*$GSEventCreateKeyEvent)(type, location, string, string, nil, 0, 0, 1);
+        event = (*$GSEventCreateKeyEvent)(type, location, string, string, (GSEventFlags) flags, 0, 0, 1);
     } else if ($GSCreateSyntheticKeyEvent && down) { // < 3.2 - no up events
         // NSLog(@"GSCreateSyntheticKeyEvent down %u for %C", down, unicode);
         event = (*$GSCreateSyntheticKeyEvent)(unicode, down, YES);
         GSEventRecord *record((GSEventRecord*) _GSEventGetGSEventRecord(event));
         record->type = kGSEventSimulatorKeyDown;
+        record->flags = (GSEventFlags) flags;
     } else return;
 
     // send GSEvent
@@ -311,8 +316,8 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
             text = [NSString stringWithUTF8String:buffer];
             for (i=0; i< [text length]; i++){
                 // NSLog(@"TEXT: sending %C", [text characterAtIndex:i]);
-                postKeyEvent(1, [text characterAtIndex:i]);
-                postKeyEvent(0, [text characterAtIndex:i]);
+                postKeyEvent(1, 0, [text characterAtIndex:i]);
+                postKeyEvent(0, 0, [text characterAtIndex:i]);
             }
             free(buffer);
             break;
@@ -321,7 +326,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
             // individual key events
             key_event = (key_event_t*) data;
             key_event->down = key_event->down ? 1 : 0;
-            postKeyEvent(key_event->down, key_event->unicode);
+            postKeyEvent(key_event->down, key_event->modifier, key_event->unicode);
             break;
             
         case MOUSE:
