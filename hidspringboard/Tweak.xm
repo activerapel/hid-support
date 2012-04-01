@@ -217,6 +217,23 @@ static void postMouseEvent(float x, float y, int click){
     prev_click = click;  
 }
 
+// handle special function keys (>= 0f700)
+typedef struct mapping {
+    int specialFunction;
+    int keyCode;
+    int charCode;
+    int modifier;
+} mapping;
+
+static mapping specialMapping[] = {
+    { NSUpArrowFunctionKey,    0x52, 0x1e, 0x00 },
+    { NSDownArrowFunctionKey,  0x51, 0x1f, 0x00 },
+    { NSLeftArrowFunctionKey,  0x50, 0x1c, 0x00 },
+    { NSRightArrowFunctionKey, 0x4f, 0x1d, 0x00 },
+};
+
+static int specialMapppingCount = sizeof(specialMapping) / sizeof(mapping);
+
 static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
     CGPoint location = CGPointMake(100, 100);
     CFStringRef string = NULL;
@@ -227,9 +244,25 @@ static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
         flags |= 1 << 16;
     }
     if ($GSEventCreateKeyEvent) {           // >= 3.2
+
+        // handle special function keys
+        int keycode = 0;
+        if (unicode >= 0xf700){
+            for (int i = 0; i < specialMapppingCount ; i ++){
+                if (specialMapping[i].specialFunction == unicode){
+                    unicode = specialMapping[i].charCode;
+                    keycode = specialMapping[i].keyCode;
+                    break;
+                }
+            }
+        }
+
         // NSLog(@"GSEventCreateKeyEvent type %u for %@ with flags %08x", type, modifier, string, flags); 
         string = CFStringCreateWithCharacters(kCFAllocatorDefault, &unicode, 1);
-        event = (*$GSEventCreateKeyEvent)(type, location, string, string, (GSEventFlags) flags, 0, 0, 1);
+        event = (*$GSEventCreateKeyEvent)(type, location, string, string, (GSEventFlags) flags, 0, 0x1111, 0x2222);
+        // manually set keycode
+        ((uin16_t*) event)[60] = keycode;
+        
     } else if ($GSCreateSyntheticKeyEvent && down) { // < 3.2 - no up events
         // NSLog(@"GSCreateSyntheticKeyEvent down %u for %C", down, unicode);
         event = (*$GSCreateSyntheticKeyEvent)(unicode, down, YES);
