@@ -241,10 +241,21 @@ static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
     CFStringRef string = NULL;
     GSEventRef  event  = NULL;
     GSEventType type = down ? kGSEventKeyDown : kGSEventKeyUp;
+
     uint32_t flags = (GSEventFlags) 0;
-    if (modifier == CMD){
-        flags |= 1 << 16;
+    if (modifier & CMD){
+        flags |= 1 << 16;   // 0x10000
     }
+    if (modifier & SHIFT){  
+        flags |= kGSEventFlagMaskShift;
+    }
+    if (modifier & CTRL){
+        flags |= kGSEventFlagMaskControl;
+    }
+    if (modifier & ALT){
+        flags |= kGSEventFlagMaskAlternate;
+    }
+    
     if ($GSEventCreateKeyEvent) {           // >= 3.2
 
         // handle special function keys

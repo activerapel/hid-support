@@ -137,8 +137,10 @@ typedef struct hid_touch {
 }  hid_touch_t;
 
 typedef enum hid_key_modifier {
-	CMD = 0x01,
-	ALT = 0x02
+	CMD   = 0x01,
+	ALT   = 0x02,
+	CTRL  = 0x04,
+	SHIFT = 0x08
 } hid_key_modifier_t;
 
 int hid_inject_text(const char * utf8_text);
