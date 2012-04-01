@@ -1,4 +1,7 @@
-include theos/makefiles/common.mk
+include $(THEOS)/makefiles/common.mk
+
+# use latest SDK but use iOS 3.0 as deployment target
+export TARGET=iphone:latest:3.0
 
 TWEAK_NAME = hidspringboard
 hidspringboard_FILES = Tweak.xm
