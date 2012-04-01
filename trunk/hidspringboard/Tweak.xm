@@ -66,6 +66,8 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 // GS functions
 GSEventRef (*$GSEventCreateKeyEvent)(int, CGPoint, CFStringRef, CFStringRef, uint32_t, UniChar, short, short);
 GSEventRef (*$GSCreateSyntheticKeyEvent)(UniChar, BOOL, BOOL);
+void       (*$GSEventSetKeyCode)(GSEventRef event, uint16_t keyCode);
+
 
 // GSEvent being sent
 static uint8_t  touchEvent[sizeof(GSEventRecord) + sizeof(GSHandInfo) + sizeof(GSPathInfo)];
@@ -258,10 +260,10 @@ static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
         }
 
         // NSLog(@"GSEventCreateKeyEvent type %u for %@ with flags %08x", type, modifier, string, flags); 
+        
         string = CFStringCreateWithCharacters(kCFAllocatorDefault, &unicode, 1);
-        event = (*$GSEventCreateKeyEvent)(type, location, string, string, (GSEventFlags) flags, 0, 0x1111, 0x2222);
-        // manually set keycode
-        ((uin16_t*) event)[60] = keycode;
+        event = (*$GSEventCreateKeyEvent)(type, location, string, string, (GSEventFlags) flags, 0, 0, 1);
+        (*GSEventSetKeyCode)(event, keycode);
         
     } else if ($GSCreateSyntheticKeyEvent && down) { // < 3.2 - no up events
         // NSLog(@"GSCreateSyntheticKeyEvent down %u for %C", down, unicode);
@@ -398,6 +400,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
     }
 	dlset($GSEventCreateKeyEvent, "GSEventCreateKeyEvent");
     dlset($GSCreateSyntheticKeyEvent, "_GSCreateSyntheticKeyEvent");
+    dlset($GSEventSetKeyCode, "_GSEventSetKeyCode");
     detectOSLevel();
 
     // Setup a mach port for receiving mouse events from outside of SpringBoard
