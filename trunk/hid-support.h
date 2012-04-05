@@ -128,14 +128,12 @@ typedef enum BRRemoteAction {
 } BRRemoteAction_t;
 
 typedef enum HWButton {
-    HWButtonHome = 0
+    HWButtonHome = 0,
+    HWButtonLock,
+    HWButtonVolumeUp,
+    HWButtonVolumeDown
 } HWButton_t;
     
-typedef struct hid_touch {
-	float x;
-	float y;
-}  hid_touch_t;
-
 typedef enum hid_key_modifier {
 	CMD   = 0x01,
 	ALT   = 0x02,
@@ -154,15 +152,15 @@ int hid_inject_remote_up(uint16_t action);
 int hid_inject_button_down(uint16_t action);
 int hid_inject_button_up(uint16_t action);
 
+int hid_get_screen_dimension(int *width, int *height);
+
+// not implemented yet
 int hid_inject_mouse_keep_alive();
 int hid_inject_mouse_rel_move(uint8_t buttons, float dx, float dy);
 int hid_inject_mouse_abs_move(uint8_t buttons, float ax, float ay);
 
-int hid_inject_touches(uint8_t num_touches, hid_touch_t *touches);
-
+// not implemented yet
 int hid_inject_accelerometer(float x, float y, float z);
-
-int hid_get_screen_dimension(int *width, int *height);
 							 
 #if defined __cplusplus
 }

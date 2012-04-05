@@ -326,6 +326,21 @@ static void handleButtonEvent(const button_event_t *button_event){
             record.type = (button_event->down) != 0 ? kGSEventMenuButtonDown : kGSEventMenuButtonUp;
             GSSendSystemEvent(&record);
             break;
+        case HWButtonLock:
+            // Simulate Lock button press
+            record.type = (button_event->down) != 0 ? kGSEventLockButtonDown : kGSEventLockButtonUp;
+            GSSendSystemEvent(&record);
+            break;
+        case HWButtonVolumeUp:
+            // Simulate Volume Up button press
+            record.type = (button_event->down) != 0 ? kGSEventVolumeUpButtonDown : kGSEventVolumeUpButtonUp;
+            GSSendSystemEvent(&record);
+            break;
+        case HWButtonVolumeDown:
+            // Simulate Volume Down button press
+            record.type = (button_event->down) != 0 ? kGSEventVolumeDownButtonDown : kGSEventVolumeDownButtonUp;
+            GSSendSystemEvent(&record);
+            break;
         default:
             break;
     }
