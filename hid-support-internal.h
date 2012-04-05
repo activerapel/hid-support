@@ -81,11 +81,6 @@ typedef struct mouse_event {
     uint16_t buttons;
 } mouse_event_t;
 
-typedef struct touche_vent {
-	uint16_t     num_touches;
-	hid_touch_t touches[0];  
-} touch_event_t;
-
 typedef struct accelerometer {
     float x;
 	float y;
@@ -96,7 +91,6 @@ typedef union hid_event {
     char            text[0];
     key_event_t     key_event;
     mouse_event_t   mouse_event;
-	touch_event_t   touch_event;
     remote_action_t remote_action;
     accelerometer_t acceleometer;   
 } hid_event_t;
