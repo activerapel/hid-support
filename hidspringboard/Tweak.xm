@@ -244,16 +244,16 @@ static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
 
     uint32_t flags = (GSEventFlags) 0;
     if (modifier & CMD){
-        flags |= 1 << 16;   // 0x10000
+        flags |= 1 << 16;   // 0x010000
     }
     if (modifier & SHIFT){  
         flags |= kGSEventFlagMaskShift;
     }
-    if (modifier & CTRL){
-        flags |= kGSEventFlagMaskControl;
-    }
     if (modifier & ALT){
         flags |= kGSEventFlagMaskAlternate;
+    }
+    if (modifier & CTRL){
+        flags |= 1 << 20;   // 0x100000
     }
     
     if ($GSEventCreateKeyEvent) {           // >= 3.2
