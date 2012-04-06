@@ -352,7 +352,7 @@ static void handleButtonEvent(const button_event_t *button_event){
         case HWButtonBrightnessUp:
             // Simulate Brightness Up button press
             if (!button_event->down) break;
-            [[%c(SBBrightnessController2) sharedBrightnessController] adjustBacklightLevel:YES];
+            [[%c(SBBrightnessController) sharedBrightnessController] adjustBacklightLevel:YES];
             break;
         case HWButtonBrightnessDown:
             // Simulate Brightness Down button press
