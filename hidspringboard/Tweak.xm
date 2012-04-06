@@ -57,6 +57,13 @@ typedef enum {
 - (void)adjustBacklightLevel:(BOOL)fp8;
 @end
 
+@interface SBMediaController : NSObject 
++(SBMediaController*) sharedInstance;
+-(void)togglePlayPause;
+-(BOOL)isPlaying;
+-(void)changeTrack:(int)change;
+@end
+
 // types for touches
 typedef enum __GSHandInfoType2 {
         kGSHandInfoType2TouchDown    = 1,    // first down
@@ -326,38 +333,54 @@ static void handleButtonEvent(const button_event_t *button_event){
     memset(&record, 0, sizeof(record));
     record.timestamp = GSCurrentEventTimestamp();
     
-    // float backlight;
-    
+    SBMediaController *mc = [%c(SBMediaController) sharedInstance];
+
     switch (button_event->action){
         case HWButtonHome:
-            // Simulate Home button press
             record.type = (button_event->down) != 0 ? kGSEventMenuButtonDown : kGSEventMenuButtonUp;
             GSSendSystemEvent(&record);
             break;
         case HWButtonLock:
-            // Simulate Lock button press
             record.type = (button_event->down) != 0 ? kGSEventLockButtonDown : kGSEventLockButtonUp;
             GSSendSystemEvent(&record);
             break;
         case HWButtonVolumeUp:
-            // Simulate Volume Up button press
             record.type = (button_event->down) != 0 ? kGSEventVolumeUpButtonDown : kGSEventVolumeUpButtonUp;
             GSSendSystemEvent(&record);
             break;
         case HWButtonVolumeDown:
-            // Simulate Volume Down button press
             record.type = (button_event->down) != 0 ? kGSEventVolumeDownButtonDown : kGSEventVolumeDownButtonUp;
             GSSendSystemEvent(&record);
             break;
         case HWButtonBrightnessUp:
-            // Simulate Brightness Up button press
             if (!button_event->down) break;
             [[%c(SBBrightnessController) sharedBrightnessController] adjustBacklightLevel:YES];
             break;
         case HWButtonBrightnessDown:
-            // Simulate Brightness Down button press
             if (!button_event->down) break;
             [[%c(SBBrightnessController) sharedBrightnessController] adjustBacklightLevel:NO];
+            break;
+        case HWButtonTogglePlayPause:
+            if (!button_event->down) break;
+            [mc togglePlayPause];
+            break;
+        case HWButtonPlay:
+            if (!button_event->down) break;
+	        if ([mc isPlaying]) break;
+		    [mc togglePlayPause];
+            break;
+        case HWButtonPause:
+            if (!button_event->down) break;
+	        if (![mc isPlaying]) break;
+		    [mc togglePlayPause];
+            break;
+        case HWButtonPreviousTrack:
+            if (!button_event->down) break;
+            [mc changeTrack:-1];
+            break;
+        case HWButtonNextTrack:
+            if (!button_event->down) break;
+            [mc changeTrack:+1];
             break;
         default:
             break;
