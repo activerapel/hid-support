@@ -133,7 +133,12 @@ typedef enum HWButton {
     HWButtonVolumeUp,
     HWButtonVolumeDown,
     HWButtonBrightnessUp,   // >= iOS 3.2
-    HWButtonBrightnessDown  // >= iOS 3.2
+    HWButtonBrightnessDown, // >= iOS 3.2
+    HWButtonTogglePlayPause,
+    HWButtonPlay,
+    HWButtonPause,
+    HWButtonPreviousTrack,
+    HWButtonNextTrack
 } HWButton_t;
     
 typedef enum hid_key_modifier {
