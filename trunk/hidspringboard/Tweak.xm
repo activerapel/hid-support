@@ -51,6 +51,12 @@ typedef enum {
 @property(nonatomic,readonly) CGFloat scale;
 @end
 
+// 3.2+
+@interface SBBrightnessController : NSObject
++ (id)sharedBrightnessController;
+- (void)adjustBacklightLevel:(BOOL)fp8;
+@end
+
 // types for touches
 typedef enum __GSHandInfoType2 {
         kGSHandInfoType2TouchDown    = 1,    // first down
@@ -320,6 +326,8 @@ static void handleButtonEvent(const button_event_t *button_event){
     memset(&record, 0, sizeof(record));
     record.timestamp = GSCurrentEventTimestamp();
     
+    // float backlight;
+    
     switch (button_event->action){
         case HWButtonHome:
             // Simulate Home button press
@@ -340,6 +348,16 @@ static void handleButtonEvent(const button_event_t *button_event){
             // Simulate Volume Down button press
             record.type = (button_event->down) != 0 ? kGSEventVolumeDownButtonDown : kGSEventVolumeDownButtonUp;
             GSSendSystemEvent(&record);
+            break;
+        case HWButtonBrightnessUp:
+            // Simulate Brightness Up button press
+            if (!button_event->down) break;
+            [[%c(SBBrightnessController2) sharedBrightnessController] adjustBacklightLevel:YES];
+            break;
+        case HWButtonBrightnessDown:
+            // Simulate Brightness Down button press
+            if (!button_event->down) break;
+            [[%c(SBBrightnessController) sharedBrightnessController] adjustBacklightLevel:NO];
             break;
         default:
             break;

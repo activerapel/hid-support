@@ -131,7 +131,9 @@ typedef enum HWButton {
     HWButtonHome = 0,
     HWButtonLock,
     HWButtonVolumeUp,
-    HWButtonVolumeDown
+    HWButtonVolumeDown,
+    HWButtonBrightnessUp,   // >= iOS 3.2
+    HWButtonBrightnessDown  // >= iOS 3.2
 } HWButton_t;
     
 typedef enum hid_key_modifier {
