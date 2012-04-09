@@ -64,6 +64,11 @@ typedef enum {
 -(void)changeTrack:(int)change;
 @end
 
+@interface VolumeControl : NSObject 
++ (id)sharedVolumeControl;
+- (void)toggleMute;
+@end
+
 // types for touches
 typedef enum __GSHandInfoType2 {
         kGSHandInfoType2TouchDown    = 1,    // first down
@@ -351,6 +356,10 @@ static void handleButtonEvent(const button_event_t *button_event){
         case HWButtonVolumeDown:
             record.type = (button_event->down) != 0 ? kGSEventVolumeDownButtonDown : kGSEventVolumeDownButtonUp;
             GSSendSystemEvent(&record);
+            break;
+        case HWButtonVolumeMute:
+            if (!button_event->down) break;
+            [[%c(VolumeControl) sharedVolumeControl] toggleMute];
             break;
         case HWButtonBrightnessUp:
             if (!button_event->down) break;

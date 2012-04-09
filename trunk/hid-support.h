@@ -132,6 +132,7 @@ typedef enum HWButton {
     HWButtonLock,
     HWButtonVolumeUp,
     HWButtonVolumeDown,
+    HWButtonVolumeMute,     // >= iOS 3.2
     HWButtonBrightnessUp,   // >= iOS 3.2
     HWButtonBrightnessDown, // >= iOS 3.2
     HWButtonTogglePlayPause,
