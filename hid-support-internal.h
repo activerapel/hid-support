@@ -49,6 +49,7 @@ typedef enum hid_event_type {
 	TOUCH,
 	ACCELEROMETER,
 	BUTTON,
+	RESERVED_08,
 	GET_SCREEN_DIMENSION = 0x100,
 } hid_event_type_t;
 
