@@ -374,6 +374,7 @@ static void handleButtonEvent(const button_event_t *button_event){
             break;
         case HWButtonVolumeMute:
             if (!button_event->down) break;
+            if (Level_ < 2) return;    // requires 3.2+
             [[%c(VolumeControl) sharedVolumeControl] toggleMute];
             break;
         case HWButtonBrightnessUp:
