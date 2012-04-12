@@ -51,6 +51,21 @@ typedef enum {
 @property(nonatomic,readonly) CGFloat scale;
 @end
 
+// unlock && undim on 3.0 & 3.1
+@interface SpringBoard : NSObject
+- (void)resetIdleTimerAndUndim:(BOOL)fp8;
+@end
+
+@interface SBAwayController : NSObject
++ (id)sharedAwayController;
+- (void)unlockWithSound:(BOOL)fp8;
+- (BOOL)isLocked;
+- (void)attemptUnlock;
+- (BOOL)isDimmed;
+- (void)undimScreen;
+- (void)userEventOccurred;
+@end
+
 // 3.2+
 @interface SBBrightnessController : NSObject
 + (id)sharedBrightnessController;
@@ -396,6 +411,24 @@ static void handleButtonEvent(const button_event_t *button_event){
     }
 }
 
+// unlock & undim iOS 3.0 and 3.1 devices
+static void keepAwake(void){
+
+    if (Level_ >= 2) return;    // 3.2+
+
+    bool wasDimmed = [[%c(SBAwayController) sharedAwayController] isDimmed ];
+    bool wasLocked = [[%c(SBAwayController) sharedAwayController] isLocked ];
+    
+    // prevent dimming
+    [(SpringBoard *) [UIApplication sharedApplication] resetIdleTimerAndUndim:true];
+    
+    // handle user unlock
+    if ( wasDimmed || wasLocked ){
+        [[%c(SBAwayController) sharedAwayController] attemptUnlock];
+        [[%c(SBAwayController) sharedAwayController] unlockWithSound:NO];
+    }
+}
+
 static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfData, void *info) {
 
     //NSLog(@"hidsupport callback, msg %u", msgid);
@@ -415,6 +448,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
     
     switch ( (hid_event_type_t) msgid){
         case TEXT:
+            keepAwake();
             // regular text
             if (dataLen == 0 || !data) break;
             // append \0 byte for NSString conversion
@@ -434,6 +468,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
             break;
             
         case KEY:
+            keepAwake();
             // individual key events
             key_event = (key_event_t*) data;
             key_event->down = key_event->down ? 1 : 0;
@@ -441,11 +476,13 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
             break;
             
         case MOUSE:
+            keepAwake();
             if (dataLen != sizeof(mouse_event_t) || !data) break;
             handleMouseEvent((const mouse_event_t *) data);
             break;
             
         case BUTTON:
+            keepAwake();
             if (dataLen != sizeof(button_event_t) || !data) break;
               handleButtonEvent((const button_event_t *) data);
               break;
