@@ -112,7 +112,11 @@ enum {
     NSRedoFunctionKey           = 0xF744,
     NSFindFunctionKey           = 0xF745,
     NSHelpFunctionKey           = 0xF746,
-    NSModeSwitchFunctionKey     = 0xF747
+    NSModeSwitchFunctionKey     = 0xF747,
+    
+    // hid-support special
+    NSBeginOfLineFunctionKey    = 0xf780,
+    NSEndOfLineFunctionKey      = 0xf781
 };
 	
 typedef enum BRRemoteAction {

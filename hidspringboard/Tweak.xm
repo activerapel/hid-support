@@ -121,7 +121,7 @@ static float mouse_y = 0;
 // access to system event server
 static mach_port_t (*GSTakePurpleSystemEventPort)(void);
 static bool PurpleAllocated;
-static int Level_;  // < 3.0, 3.0-3.1.x, 3.2+
+static int Level_;  // 0 = < 3.0, 1 = 3.0-3.1.x, 2 = 3.2-4.3.3, 3 = 5.0+
 
 // iPad support
 static int is_iPad = 0;
@@ -261,10 +261,15 @@ typedef struct mapping {
 } mapping;
 
 static mapping specialMapping[] = {
-    { NSUpArrowFunctionKey,    0x52, 0x1e, 0x00 },
-    { NSDownArrowFunctionKey,  0x51, 0x1f, 0x00 },
-    { NSLeftArrowFunctionKey,  0x50, 0x1c, 0x00 },
-    { NSRightArrowFunctionKey, 0x4f, 0x1d, 0x00 },
+    { NSUpArrowFunctionKey,     0x52, 0x1e, 0x00 },
+    { NSDownArrowFunctionKey,   0x51, 0x1f, 0x00 },
+    { NSLeftArrowFunctionKey,   0x50, 0x1c, 0x00 },
+    { NSRightArrowFunctionKey,  0x4f, 0x1d, 0x00 },
+
+    { NSHomeFunctionKey,        0x52, 0x1e, CMD },   // up
+    { NSEndFunctionKey,         0x51, 0x1f, CMD },   // down
+    { NSBeginOfLineFunctionKey, 0x50, 0x1c, CMD },   // left
+    { NSEndOfLineFunctionKey,   0x4f, 0x1d, CMD },   // right
 };
 
 static int specialMapppingCount = sizeof(specialMapping) / sizeof(mapping);
@@ -274,6 +279,19 @@ static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
     CFStringRef string = NULL;
     GSEventRef  event  = NULL;
     GSEventType type = down ? kGSEventKeyDown : kGSEventKeyUp;
+
+    // handle special function keys
+    int keycode = 0;
+    if (unicode >= 0xf700){
+        for (int i = 0; i < specialMapppingCount ; i ++){
+            if (specialMapping[i].specialFunction == unicode){
+                unicode   = specialMapping[i].charCode;
+                keycode   = specialMapping[i].keyCode;
+                modifier |= specialMapping[i].modifier;
+                break;
+            }
+        }
+    }
 
     uint32_t flags = (GSEventFlags) 0;
     if (modifier & CMD){
@@ -291,20 +309,7 @@ static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
     
     if ($GSEventCreateKeyEvent) {           // >= 3.2
 
-        // handle special function keys
-        int keycode = 0;
-        if (unicode >= 0xf700){
-            for (int i = 0; i < specialMapppingCount ; i ++){
-                if (specialMapping[i].specialFunction == unicode){
-                    unicode = specialMapping[i].charCode;
-                    keycode = specialMapping[i].keyCode;
-                    break;
-                }
-            }
-        }
-
         // NSLog(@"GSEventCreateKeyEvent type %u for %@ with flags %08x", type, modifier, string, flags); 
-        
         string = CFStringCreateWithCharacters(kCFAllocatorDefault, &unicode, 1);
         event = (*$GSEventCreateKeyEvent)(type, location, string, string, (GSEventFlags) flags, 0, 0, 1);
         (*GSEventSetKeyCode)(event, keycode);
@@ -315,6 +320,9 @@ static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
         GSEventRecord *record((GSEventRecord*) _GSEventGetGSEventRecord(event));
         record->type = kGSEventSimulatorKeyDown;
         record->flags = (GSEventFlags) flags;
+
+        // TODO: set keycode
+
     } else return;
 
     // send GSEvent
