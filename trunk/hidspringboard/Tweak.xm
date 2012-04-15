@@ -280,9 +280,9 @@ static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
     GSEventRef  event  = NULL;
     GSEventType type = down ? kGSEventKeyDown : kGSEventKeyUp;
 
-    // handle special function keys
+    // handle special function keys on 3.2+
     int keycode = 0;
-    if (unicode >= 0xf700){
+    if ($GSEventCreateKeyEvent && unicode >= 0xf700){
         for (int i = 0; i < specialMapppingCount ; i ++){
             if (specialMapping[i].specialFunction == unicode){
                 unicode   = specialMapping[i].charCode;
@@ -320,8 +320,6 @@ static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
         GSEventRecord *record((GSEventRecord*) _GSEventGetGSEventRecord(event));
         record->type = kGSEventSimulatorKeyDown;
         record->flags = (GSEventFlags) flags;
-
-        // TODO: set keycode
 
     } else return;
 
