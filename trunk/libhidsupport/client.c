@@ -144,16 +144,6 @@ int hid_inject_mouse_abs_move(uint8_t buttons, float ax, float ay){
 	return hid_send_message(MOUSE, sizeof(event), (uint8_t*) &event, 0);
 }
 
-int hid_inject_touches(uint8_t num_touches, hid_touch_t *touches){
-	if (num_touches > 10) num_touches = 10;
-	uint16_t event_size = num_touches * sizeof(hid_touch_t) + sizeof(uint16_t);
-	uint8_t event_buffer[event_size];
-	touch_event_t *event = (touch_event_t *) event_buffer;
-	event->num_touches = num_touches;
-	memcpy(event->touches, touches, num_touches * sizeof(hid_touch_t));
-	return hid_send_message(TOUCH, event_size, (uint8_t*) event, 0);
-}
-
 int hid_inject_accelerometer(float x, float y, float z){
 	accelerometer_t event;
 	event.x = x;
