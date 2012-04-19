@@ -282,9 +282,10 @@ static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
 
     // handle special function keys on 3.2+
     int keycode = 0;
-    if ($GSEventCreateKeyEvent && unicode >= 0xf700){
+    if (Level_ >= 2 && unicode >= 0xf700){
         for (int i = 0; i < specialMapppingCount ; i ++){
             if (specialMapping[i].specialFunction == unicode){
+                NSLog(@"Mapping 0x%04x -> 0x%02x/0x02x", unicode, specialMapping[i].charCode, specialMapping[i].keyCode);
                 unicode   = specialMapping[i].charCode;
                 keycode   = specialMapping[i].keyCode;
                 modifier |= specialMapping[i].modifier;
