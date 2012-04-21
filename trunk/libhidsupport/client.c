@@ -33,6 +33,7 @@
 #import <CoreFoundation/CoreFoundation.h>
 
 #include "../hid-support-internal.h"
+#include "../3rdParty/GraphicsServices/GSEvent.h"
 
 #define INVALID_RESULT -5
 
@@ -152,6 +153,12 @@ int hid_inject_accelerometer(float x, float y, float z){
 	return hid_send_message(ACCELEROMETER, sizeof(event), (uint8_t*) &event, 0);
 }
 	
+int hid_inject_gseventrecord(uint8_t *event_record){
+    // get size of GSEventRecord
+    int size = sizeof(GSEventRecord) + ((GSEventRecord*)event_record)->infoSize;
+    return hid_send_message(GSEVENTRECORD, size, event_record, 0);
+}
+
 int hid_get_screen_dimension(int *width, int *height){
     CFDataRef resultData;
     int result = hid_send_message(GET_SCREEN_DIMENSION, 0, NULL, &resultData);

@@ -453,7 +453,8 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
     // accelerometer_t * acceleometer;
     dimension_t dimension_result;
     CFDataRef returnData = NULL;
-    
+    CGPoint location;
+
     switch ( (hid_event_type_t) msgid){
         case TEXT:
             keepAwake();
@@ -495,6 +496,11 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
               handleButtonEvent((const button_event_t *) data);
               break;
                     
+        case GSEVENTRECORD:
+            location = CGPointMake(100, 100);
+            sendGSEvent((GSEventRecord*)data, location);
+            break;
+            
         case GET_SCREEN_DIMENSION:
             dimension_result.width  = screen_width;
             dimension_result.height = screen_height;
