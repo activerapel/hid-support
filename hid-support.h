@@ -164,6 +164,8 @@ int hid_inject_remote_up(uint16_t action);
 int hid_inject_button_down(uint16_t action);
 int hid_inject_button_up(uint16_t action);
 
+int hid_inject_gseventrecord(uint8_t *event_record);
+
 int hid_get_screen_dimension(int *width, int *height);
 
 // not implemented yet
