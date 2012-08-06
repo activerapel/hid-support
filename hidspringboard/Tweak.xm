@@ -161,6 +161,25 @@ static float box(float min, float value, float max){
     return value;
 }
 
+static bool isSBUserNotificationAlertVisible(void){
+    UIView * keyWindow = [[UIApplication sharedApplication] keyWindow];
+    if (!keyWindow) return false;
+    if (![keyWindow.subviews count]) return false;
+    UIView * firstSubview = [keyWindow.subviews objectAtIndex:0];
+    return [firstSubview isKindOfClass:[UIAlertView class]];
+}
+
+static void sendGSEventToSpringBoard(GSEventRecord *eventRecord){
+    mach_port_t purple(0);
+    purple = (*GSTakePurpleSystemEventPort)();
+    if (purple) {
+        GSSendEvent(eventRecord, purple);
+    }
+    if (purple && PurpleAllocated){
+        mach_port_deallocate(mach_task_self(), purple);
+    }
+}
+
 static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
 
     mach_port_t port(0);
@@ -324,9 +343,14 @@ static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
 
     } else return;
 
-    // send GSEvent
-    sendGSEvent((GSEventRecord*) _GSEventGetGSEventRecord(event), location);
-    
+    // send events to SpringBoard if SBUserNotificationAlert is visible
+    if (isSBUserNotificationAlertVisible()) {
+        sendGSEventToSpringBoard((GSEventRecord*) _GSEventGetGSEventRecord(event));
+    } else {
+        // send GSEvent
+        sendGSEvent((GSEventRecord*) _GSEventGetGSEventRecord(event), location);
+    }
+        
     if (string){
         CFRelease(string);
     }
@@ -419,10 +443,7 @@ static void handleButtonEvent(const button_event_t *button_event){
     }
 }
 
-// unlock & undim iOS 3.0 and 3.1 devices
 static void keepAwake(void){
-
-    if (Level_ >= 2) return;    // 3.2+
 
     bool wasDimmed = [[%c(SBAwayController) sharedAwayController] isDimmed ];
     bool wasLocked = [[%c(SBAwayController) sharedAwayController] isLocked ];
@@ -497,6 +518,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
               break;
                     
         case GSEVENTRECORD:
+            keepAwake();
             location = CGPointMake(100, 100);
             sendGSEvent((GSEventRecord*)data, location);
             break;
