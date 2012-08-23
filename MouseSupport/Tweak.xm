@@ -55,6 +55,17 @@
 #import <GraphicsServices/GraphicsServices.h>
 #import <QuartzCore/QuartzCore.h>
 
+typedef struct {
+    float x, y;
+    int buttons;
+    BOOL absolute;
+} MouseEvent;
+
+typedef enum {
+    MouseMessageTypeEvent,
+    MouseMessageTypeSetEnabled,
+} MouseMessageType;
+
 @interface CAWindowServer : NSObject
 @property(readonly, assign) NSArray *displays;
 + (id)serverIfRunning;
@@ -138,8 +149,20 @@ typedef enum {
 @property(nonatomic,readonly) CGFloat scale;
 @end
 
+
+@interface SpringBoard (Mouse)
+- (void)mouseUndim;
+- (void)setMousePointerEnabled:(BOOL)enabled;
+- (void)handleMouseEventAtPoint:(CGPoint)point buttons:(int)buttons;
+- (void)handleMouseEventWithX:(float)x Y:(float)y buttons:(int)buttons;
+- (void)moveMousePointerToPoint:(CGPoint)point;
+- (CGPoint)mouseInterfacePointForDisplayPoint:(CGPoint)point;
+@end
+
 #define APP_ID "jp.ashikase.mousesupport"
 #define MACH_PORT_NAME APP_ID
+
+static CFDataRef mouseCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfData, void *info);
 
 // View objects for the pointer
 static UIWindow *mouseWin = nil;
@@ -153,11 +176,14 @@ static float max_x = 0, max_y = 0;
 static CGPoint lastMouseLocation = { 0, 0};
 
 // Define button values
-#define BUTTON_LOCK 0x02
-#define BUTTON_MENU 0x04
-static char buttonTwo   = BUTTON_LOCK;
-static char buttonThree = BUTTON_MENU;
+#define BUTTON_PRIMARY   0x01
+#define BUTTON_SECONDARY 0x02
+#define BUTTON_TERTIARY  0x04
 static BOOL swapButtonsTwoThree = NO;
+static BOOL swapButtonsOneTwo = NO;
+static char buttonClick = BUTTON_PRIMARY;
+static char buttonHome  = BUTTON_SECONDARY;
+static char buttonLock  = BUTTON_TERTIARY;
 
 // cloaking works
 static BOOL cloakingSupport = NO;
@@ -177,7 +203,7 @@ static int orientation_ = 0;
 // Speed is used with relative mouse positioning
 static float mouseSpeed = 1.0f;
 
-static CFDataRef mouseCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfData, void *info);
+static Class $SBAwayController = objc_getClass("SBAwayController");
 
 //==============================================================================
 
@@ -187,31 +213,55 @@ static bool PurpleAllocated;
 
 //==============================================================================
 
-@interface SpringBoard (Mouse)
-- (void)setMousePointerEnabled:(BOOL)enabled;
-- (void)setMouseButtonsTwoThreeSwapped:(BOOL)swapped;
-- (void)handleMouseEventAtPoint:(CGPoint)point buttons:(int)buttons;
-- (void)handleMouseEventWithX:(float)x Y:(float)y buttons:(int)buttons;
-- (void)moveMousePointerToPoint:(CGPoint)point;
-@end
-
 static void loadPreferences()
 {
-    NSArray *keys = [NSArray arrayWithObjects:@"swapButtonsTwoThree", @"mouseSpeed", nil];
+    // defaults
+    swapButtonsOneTwo = NO;
+    swapButtonsTwoThree = NO;
+    mouseSpeed = 1.0f;
+
+    NSArray *keys = [NSArray arrayWithObjects:@"swapButtonsOneTwo", @"swapButtonsTwoThree", @"mouseSpeed", nil];
     NSDictionary *dict = (NSDictionary *)CFPreferencesCopyMultiple((CFArrayRef)keys, CFSTR(APP_ID),
         kCFPreferencesCurrentUser, kCFPreferencesCurrentHost);
+    NSLog(@"MouseSupport prefs %@", dict);
     if (dict) {
         NSArray *values = [dict objectsForKeys:keys notFoundMarker:[NSNull null]];
+        id obj;
 
-        id obj = [values objectAtIndex:0];
+        obj = [values objectAtIndex:0];
+        if ([obj isKindOfClass:[NSNumber class]])
+            swapButtonsOneTwo = [obj boolValue];
+
+        obj = [values objectAtIndex:1];
         if ([obj isKindOfClass:[NSNumber class]])
             swapButtonsTwoThree = [obj boolValue];
 
-        obj = [values objectAtIndex:1];
+        obj = [values objectAtIndex:2];
         if ([obj isKindOfClass:[NSNumber class]])
             mouseSpeed = [obj floatValue];
 
         [dict release];
+    }
+
+    // set mouse buttons
+    if (swapButtonsOneTwo) {
+        buttonClick = BUTTON_SECONDARY;
+        if (swapButtonsTwoThree){
+            buttonHome = BUTTON_TERTIARY;
+            buttonLock = BUTTON_PRIMARY;
+        } else {
+            buttonHome = BUTTON_PRIMARY;
+            buttonLock = BUTTON_TERTIARY;
+        }
+    } else {
+        buttonClick = BUTTON_PRIMARY;
+        if (swapButtonsTwoThree){
+            buttonHome = BUTTON_TERTIARY;
+            buttonLock = BUTTON_SECONDARY;
+        } else {
+            buttonHome = BUTTON_SECONDARY;
+            buttonLock = BUTTON_TERTIARY;
+        }
     }
 }
 
@@ -221,9 +271,6 @@ static void reloadPreferences(CFNotificationCenterRef center, void *observer,
     // NOTE: Must synchronize preferences from disk
     CFPreferencesAppSynchronize(CFSTR(APP_ID));
     loadPreferences();
-
-    SpringBoard *springBoard = (SpringBoard *)[UIApplication sharedApplication];
-    [springBoard setMouseButtonsTwoThreeSwapped:swapButtonsTwoThree];
 }
 
 static void updateOrientation()
@@ -263,17 +310,37 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 
 %hook SpringBoard
 
+%new(v@:)
+-(void)mouseUndim {
+     // from BTstack Keyboard                    
+    bool wasDimmed = [[$SBAwayController sharedAwayController] isDimmed ];
+    bool wasLocked = [[$SBAwayController sharedAwayController] isLocked ];
+    
+    // prevent dimming - from BTstack Keyboard
+    [self resetIdleTimerAndUndim:true];
+    
+    // handle user unlock
+    if ( wasDimmed || wasLocked ){
+        [[$SBAwayController sharedAwayController] attemptUnlock];
+        [[$SBAwayController sharedAwayController] unlockWithSound:NO];
+    }
+}
+
+
 %new(v@:c)
 - (void)setMousePointerEnabled:(BOOL)enabled
 {
     if (enabled) {
+
+        [self mouseUndim];
+
         if (mouseWin == nil) {
             // Create a transparent window that will float above everything else
             // NOTE: The window level value was not chosen scientifically; it is
             //       assumed to be large enough (the largest values used by
             //       SpringBoard seen so far have been less than 2000).
             mouseWin = [[UIWindow alloc] initWithFrame:CGRectZero];
-            mouseWin.windowLevel = 2000;
+            mouseWin.windowLevel = 3000;
 
             [mouseWin setUserInteractionEnabled:NO];
             [mouseWin setHidden:NO];
@@ -304,18 +371,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     }
 }
 
-%new(v@:c)
-- (void)setMouseButtonsTwoThreeSwapped:(BOOL)swapped
-{
-    if (swapped) {
-        buttonTwo = BUTTON_MENU;
-        buttonThree = BUTTON_LOCK;
-    } else {
-        buttonTwo = BUTTON_LOCK;
-        buttonThree = BUTTON_MENU;
-    }
-}
-
+// handles size of mouse pointer
 %new(@v:{CGPoint=ff})
 -(void)moveMousePointerToPoint:(CGPoint)point
 {
@@ -346,6 +402,34 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     mouseView.origin = mousePoint;
 }
 
+%new({CGPoint=ff}@:{CGPoint=ff})
+-(CGPoint)mouseInterfacePointForDisplayPoint:(CGPoint)point {
+
+    // Translate the point to match the current orientation
+    float temp;
+    switch (orientation_) {
+        case 0: // Home button bottom
+            break;
+        case 90: // Home button right
+            temp = point.x;
+            point.x = screen_width - point.y;
+            point.y = temp;
+            break;
+        case -90: // Home button left
+            temp = point.x;
+            point.x = point.y;
+            point.y = screen_height - temp;
+            break;
+        case 180: // Home button top
+            point.x = screen_width - point.x;
+            point.y = screen_height - point.y;
+            break;
+        default:
+            break;
+    }
+    return point;
+}
+
 // NOTE: Swiped and modified from Jay Freeman (saurik)'s Veency
 %new(v@:{CGPoint=ff}i)
 - (void)handleMouseEventAtPoint:(CGPoint)point buttons:(int)buttons
@@ -355,11 +439,10 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     // NOTE: Must store button state for comparision, port for
     //       mouse dragging and button up
     static int buttons_;
-    static mach_port_t port_(0);
 
     int diff = buttons_ ^ buttons;
-    bool twas((buttons_ & 0x1) != 0);
-    bool tis((buttons & 0x1) != 0);
+    bool twas((buttons_ & buttonClick) != 0);
+    bool tis ((buttons  & buttonClick) != 0);
     buttons_ = buttons;
 
     // Round point values to prevent subpixel coordinates
@@ -378,7 +461,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 
         memset(&record, 0, sizeof(record));
 
-        record.type = (buttons & 0x4) != 0 ?
+        record.type = (buttons & 0x10) != 0 ?
             GSEventTypeHeadsetButtonDown :
             GSEventTypeHeadsetButtonUp;
 
@@ -387,13 +470,13 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
         GSSendSystemEvent(&record);
     }
 
-    if ((diff & buttonThree) != 0) {
+    if ((diff & buttonHome) != 0) {
         // Simulate Home button press
         struct GSEventRecord record;
 
         memset(&record, 0, sizeof(record));
 
-        record.type = (buttons & buttonThree) != 0 ?
+        record.type = (buttons & buttonHome) != 0 ?
             GSEventTypeMenuButtonDown :
             GSEventTypeMenuButtonUp;
 
@@ -402,13 +485,13 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
         GSSendSystemEvent(&record);
     }
 
-    if ((diff & buttonTwo) != 0) {
+    if ((diff & buttonLock) != 0) {
         // Simulate Sleep/Wake button press
         struct GSEventRecord record;
 
         memset(&record, 0, sizeof(record));
 
-        record.type = (buttons & buttonTwo) != 0 ?
+        record.type = (buttons & buttonLock) != 0 ?
             GSEventTypeLockButtonDown :
             GSEventTypeLockButtonUp;
 
@@ -454,17 +537,17 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
         event.data.path.x02 = tis ? 0x03 : 0x00;
         event.data.path.position = event.record.locationInWindow;
 
+        if (!cloakingSupport){
+            if (point.x >= 1.0) point.x -= 1.0f;
+            if (point.y >= 1.0) point.y -= 1.0f;
+        }
+
+        static mach_port_t port_(0);
         if (twas != tis && tis) {
             // Button down and was not down before
             port_ = 0;
 
             // NSLog(@"point %f,%f - mouseView.origin %f,%f (o=%d)", point.x, point.y, mouseView.origin.x, mouseView.origin.y, orientation_);
-
-            if (!cloakingSupport){
-                if (point.x >= 1.0) point.x -= 1.0f;
-                if (point.y >= 1.0) point.y -= 1.0f;
-            }
-
             if (CAWindowServer *server = [CAWindowServer serverIfRunning]) {
                 NSArray *displays([server displays]);
                 if (displays != nil && [displays count] != 0) {
@@ -492,7 +575,6 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
                 port_ = purple;
             }
         }
-
         // NSLog(@"point %f,%f - port %p", point.x, point.y, port_);
 
         GSSendEvent(&event.record, port_);
@@ -506,9 +588,9 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 %new(v@:{CGPoint=ff}i)
 - (void)handleMouseEventWithX:(float)x Y:(float)y buttons:(int)buttons
 {
-    // NSLog(@"handleMouseEventWithX %f andY %f (max: %f, %f)", x, y, max_x, max_y);
     static float x_ = 0, y_ = 0;
- 
+    
+    // NSLog(@"handleMouseEventWithX %f andY %f (max: %f, %f)", x, y, max_x, max_y); 
     x_ += x * mouseSpeed;
     x_ = (x_ < 0) ? 0 : x_;
     x_ = (x_ > max_x) ? max_x : x_;
@@ -517,32 +599,10 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     y_ = (y_ < 0) ? 0 : y_;
     y_ = (y_ > max_y) ? max_y : y_;
 
-    CGPoint point = CGPointMake(x_, y_);
+    CGPoint point = [self mouseInterfacePointForDisplayPoint:CGPointMake(x_, y_)];
 
-    // Translate the point to match the current orientation
-    float temp;
-    switch (orientation_) {
-        case 0: // Home button bottom
-            break;
-        case 90: // Home button right
-            temp = point.x;
-            point.x = screen_width - point.y;
-            point.y = temp;
-            break;
-        case -90: // Home button left
-            temp = point.x;
-            point.x = point.y;
-            point.y = screen_height - temp;
-            break;
-        case 180: // Home button top
-            point.x = screen_width - point.x;
-            point.y = screen_height - point.y;
-            break;
-        default:
-            break;
-    }
-
-   [self handleMouseEventAtPoint:point buttons:buttons];
+    // NSLog(@"handleMouseEventWithX %f/%f", point.x, point.y);
+    [self handleMouseEventAtPoint:point buttons:buttons];
 }
 
 - (void)applicationDidFinishLaunching:(UIApplication *)application
@@ -552,7 +612,6 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     // Apply settings
     // FIXME: Read from preferences
     loadPreferences();
-    [self setMouseButtonsTwoThreeSwapped:swapButtonsTwoThree];
 
     // Add observer for changes made to preferences
     CFNotificationCenterAddObserver(
@@ -560,7 +619,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
             NULL, reloadPreferences, CFSTR(APP_ID"-settings"),
             NULL, 0);
 
-    // Setup a mach port for sending mouse events from outside of SpringBoard
+    // Setup a mach port for receiving mouse events from outside of SpringBoard
     // NOTE: Using kCFRunLoopDefaultMode causes issues when dragging SpringBoard's
     //       scrollview; why kCFRunLoopCommonModes fixes the issue, I do not know.
     CFMessagePortRef local = CFMessagePortCreateLocal(NULL, CFSTR(MACH_PORT_NAME), mouseCallBack, NULL, NULL);
@@ -660,19 +719,6 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 %end // GFirmware32x
 
 //==============================================================================
-
-typedef struct {
-    float x, y;
-    int buttons;
-    BOOL absolute;
-} MouseEvent;
-
-typedef enum {
-    MouseMessageTypeEvent,
-    MouseMessageTypeSetEnabled
-} MouseMessageType;
-
-static Class $SBAwayController = objc_getClass("SBAwayController");
 
 static CFDataRef mouseCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfData, void *info)
 {
@@ -781,7 +827,7 @@ __attribute__((constructor)) static void init()
         is_50 = YES;
     }
     NSLog(@"is_50 = %u");
-
+    
     %init;
 }
 
