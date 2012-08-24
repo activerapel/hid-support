@@ -157,6 +157,7 @@ typedef enum {
 - (void)handleMouseEventWithX:(float)x Y:(float)y buttons:(int)buttons;
 - (void)moveMousePointerToPoint:(CGPoint)point;
 - (CGPoint)mouseInterfacePointForDisplayPoint:(CGPoint)point;
+- (CGPoint)mouseLocation;
 @end
 
 #define APP_ID "jp.ashikase.mousesupport"
@@ -170,8 +171,10 @@ static UIImageView *mouseView = nil;
 static Context *mouseRenderContext = NULL;
 static CGSize mouseImageSize;
 
-// Screen limits
+// Screen limits (portrait)
 static float screen_width = 0, screen_height = 0;
+
+// bounds for current orientation
 static float max_x = 0, max_y = 0;
 static CGPoint lastMouseLocation = { 0, 0};
 
@@ -372,7 +375,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 }
 
 // handles size of mouse pointer
-%new(@v:{CGPoint=ff})
+%new(v@:{CGPoint=ff})
 -(void)moveMousePointerToPoint:(CGPoint)point
 {
     lastMouseLocation = point;
@@ -400,6 +403,11 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
             break;
     }
     mouseView.origin = mousePoint;
+}
+
+%new({CGPoint=ff}@:)
+- (CGPoint)mouseLocation{
+    return lastMouseLocation;
 }
 
 %new({CGPoint=ff}@:{CGPoint=ff})
@@ -563,7 +571,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
                         point2.x *= retina_factor;
                         point2.y *= retina_factor;
                         port_ = [display clientPortAtPosition:point2];
-                        // NSLog(@"orientation %d, screen (%f, %f), coord (%f, %f), coord2 (%f,%f) -> port %x", orientation_, screen_width, screen_height, point.x, point.y, point2.x, point2.y, (int) port_);
+                        NSLog(@"orientation %d, screen (%f, %f), coord (%f, %f), coord2 (%f,%f) -> port %x", orientation_, screen_width, screen_height, point.x, point.y, point2.x, point2.y, (int) port_);
                     }
                 }
             }
@@ -634,7 +642,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     screen_height = rect.size.height;
     max_x = screen_width - 1;
     max_y = screen_height - 1;
-    // NSLog(@"Initial screen size: %f x %f", max_x, max_y);
+    NSLog(@"Initial screen size: %f x %f", max_x, max_y);
     
     // iPad has rotated framebuffer
     if ([[UIDevice currentDevice] respondsToSelector:@selector(userInterfaceIdiom)]){
