@@ -156,7 +156,6 @@ typedef enum {
 - (void)handleMouseEventAtPoint:(CGPoint)point buttons:(int)buttons;
 - (void)handleMouseEventWithX:(float)x Y:(float)y buttons:(int)buttons;
 - (void)moveMousePointerToPoint:(CGPoint)point;
-- (CGPoint)mouseInterfacePointForDisplayPoint:(CGPoint)point;
 - (CGPoint)mouseLocation;
 - (mach_port_t)clientPortAtPosition:(CGPoint)point;
 @end
@@ -175,8 +174,7 @@ static CGSize mouseImageSize;
 // Screen limits (portrait)
 static float screen_width = 0, screen_height = 0;
 
-// bounds for current orientation
-static float max_x = 0, max_y = 0;
+// coordinates in portrait orientatino
 static CGPoint currentMouseLocation = { 0, 0};
 
 // Define button values
@@ -299,20 +297,6 @@ static void reloadPreferences(CFNotificationCenterRef center, void *observer,
 static void updateOrientation()
 {
     mouseView.transform = CGAffineTransformMakeRotation(orientation_ * M_PI / 180.0f);
-
-    // Update screen limits
-    switch (orientation_){
-        case  90:
-        case -90: 
-        case 270:
-            max_x = screen_height - 1;;
-            max_y = screen_width - 1;
-            break;
-        default:    // 0/180/...
-            max_x = screen_width - 1;
-            max_y = screen_height - 1;;
-            break;
-    }
 }
 
 static CGPoint projectPoint(CGPoint point){
@@ -341,8 +325,8 @@ static mach_port_t clientPortAtPosition(CGPoint point) {
         if (displays != nil && [displays count] != 0) {
             if (CAWindowServerDisplay *display = [displays objectAtIndex:0]) {
                 port_ = [display clientPortAtPosition:point2];
-                 // NSLog(@"MouseSupport: clientPortAtPosition - display %p, orientation %d, screen (%f, %f), coord (%f, %f) -> port %x",
-                 //    display, orientation_, screen_width, screen_height, point.x, point.y, port_);
+                 NSLog(@"MouseSupport: clientPortAtPosition - display %p, orientation %d, screen (%f, %f), coord (%f, %f) -> port %x",
+                    display, orientation_, screen_width, screen_height, point.x, point.y, port_);
             }
         }
     }
@@ -512,39 +496,10 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     return currentMouseLocation;
 }
 
-%new({CGPoint=ff}@:{CGPoint=ff})
--(CGPoint)mouseInterfacePointForDisplayPoint:(CGPoint)point {
-
-    // Translate the point to match the current orientation
-    float temp;
-    switch (orientation_) {
-        case 0: // Home button bottom
-            break;
-        case 90: // Home button right
-            temp = point.x;
-            point.x = screen_width - point.y;
-            point.y = temp;
-            break;
-        case -90: // Home button left
-            temp = point.x;
-            point.x = point.y;
-            point.y = screen_height - temp;
-            break;
-        case 180: // Home button top
-            point.x = screen_width - point.x;
-            point.y = screen_height - point.y;
-            break;
-        default:
-            break;
-    }
-    return point;
-}
-
 %new(v@:^v)
 -(void)sendCustomMouseEvent:(void *) event{
     mach_port_t purple(0);
-    CGPoint point = [self mouseLocation];
-    mach_port_t port_ = clientPortAtPosition(point);
+    mach_port_t port_ = clientPortAtPosition(currentMouseLocation);
     if (port_ == 0) {
         // Is SpringBoard
         if (purple == 0)
@@ -673,11 +628,9 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 
         static mach_port_t port_(0);
         if (twas != tis && tis) {
-            // Button down and was not down before, get correct app and keep reference
-            port_ = 0;
 
-            CGPoint point2 = projectPoint(point);
-            port_ = clientPortAtPosition(point2);
+            // Button down and was not down before, get app port and keep reference
+            port_ = clientPortAtPosition(point);
 
             if (port_ == 0) {
                 // Is SpringBoard
@@ -701,29 +654,43 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 %new(v@:{CGPoint=ff}i)
 - (void)handleMouseEventWithX:(float)x Y:(float)y buttons:(int)buttons
 {
-    static float x_ = 0, y_ = 0;
- 
-    // NSLog(@"handleMouseEventWithX %f andY %f (max: %f, %f)", x, y, max_x, max_y); 
-    x_ += x * mouseSpeed;
-    x_ = (x_ < 0) ? 0 : x_;
-    x_ = (x_ > max_x) ? max_x : x_;
+    x *= mouseSpeed;
+    y *= mouseSpeed;
 
-    y_ += y * mouseSpeed;
-    y_ = (y_ < 0) ? 0 : y_;
-    y_ = (y_ > max_y) ? max_y : y_;
+    CGPoint point = [self mouseLocation];
 
-    CGPoint point = [self mouseInterfacePointForDisplayPoint:CGPointMake(x_, y_)];
-    // [self clientPortAtPosition:point];
+    switch (orientation_) {
+        case 0: // Home button bottom
+            point.x += x;
+            point.y += y;
+            break;
+        case 90: // Home button right
+            point.x -= y;
+            point.y += x;
+            break;
+        case -90: // Home button left
+            point.x += y;
+            point.y -= x;
+            break;
+        case 180: // Home button top
+            point.x -= x;
+            point.y -= y;
+            break;
+        default:
+            break;
+    }
 
-    // NSLog(@"handleMouseEventWithX %f/%f", point.x, point.y);
+    if (point.x < 0) point.x = 0;
+    if (point.x > screen_width)  point.x = screen_width;
+    if (point.y < 0) point.y = 0;
+    if (point.y > screen_height) point.y = screen_height;
+
     [self handleMouseEventAtPoint:point buttons:buttons];
 }
 
 - (void)applicationDidFinishLaunching:(UIApplication *)application
 {
     %orig;
-
-    NSLog(@"MouseSupport: any applicationDidFinishLaunching");
 
     // Apply settings
     // FIXME: Read from preferences
@@ -748,9 +715,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     CGRect rect = [[UIScreen mainScreen] bounds];
     screen_width = rect.size.width;
     screen_height = rect.size.height;
-    max_x = screen_width - 1;
-    max_y = screen_height - 1;
-    NSLog(@"MouseSupport: screen size: %f x %f", screen_width, screen_height);
+    // NSLog(@"MouseSupport: screen size: %f x %f", screen_width, screen_height);
     
     // iPad has rotated framebuffer
     if ([[UIDevice currentDevice] respondsToSelector:@selector(userInterfaceIdiom)]){
@@ -761,7 +726,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     if ([[UIScreen mainScreen] respondsToSelector:@selector(displayLinkWithTarget:selector:)]){
         UIScreen *mainScreen = [UIScreen mainScreen];
         retina_factor = mainScreen.scale;
-        NSLog(@" MouseSupport: retina factor %f", retina_factor);
+        // NSLog(@" MouseSupport: retina factor %f", retina_factor);
     }
 }
 
@@ -773,29 +738,23 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 // NOTE: Only hooked for firmware < 3.2
 
 %hook SpringBoard
-
 - (void)noteUIOrientationChanged:(int)orientation display:(id)display
 {
     %orig;
 
     // Update pointer orientation
     orientation_ = orientation;
+
     updateOrientation();
-
-   [self moveMousePointerToPoint:currentMouseLocation];
+    [self moveMousePointerToPoint:currentMouseLocation];
 }
-
-// NOTE: no need to detect retina display or iPad 
-
 %end 
-
 %end // GFirmware3x
 
 %group GFirmware32x
 // NOTE: Only hooked for firmware >= 3.2
 
 %hook SpringBoard
-
 - (void)noteInterfaceOrientationChanged:(int)orientation
 {
     %orig;
@@ -817,12 +776,10 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     }
 
     updateOrientation();
-    
-   [self moveMousePointerToPoint:currentMouseLocation];
+    [self moveMousePointerToPoint:currentMouseLocation];
 }
-
 %end // GFirmware32x
-
+%end
 //==============================================================================
 
 __attribute__((constructor)) static void init()
