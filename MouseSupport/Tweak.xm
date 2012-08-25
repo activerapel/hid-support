@@ -214,6 +214,25 @@ static Class $SBAwayController = objc_getClass("SBAwayController");
 // NOTE: Swiped from Jay Freeman (saurik)'s Veency
 static mach_port_t (*GSTakePurpleSystemEventPort)(void);
 static bool PurpleAllocated;
+template <typename Type_>
+
+//==============================================================================
+
+static inline void lookupSymbol(const char *libraryFilePath, const char *symbolName, Type_ &function)
+{
+    // Lookup the function
+    struct nlist nl[2];
+    memset(nl, 0, sizeof(nl));
+    nl[0].n_un.n_name = (char *)symbolName;
+    nlist(libraryFilePath, nl);
+
+    // Check whether it is ARM or Thumb
+    uintptr_t value = nl[0].n_value;
+    if ((nl[0].n_desc & N_ARM_THUMB_DEF) != 0)
+        value |= 0x00000001;
+
+    function = reinterpret_cast<Type_>(value);
+}
 
 //==============================================================================
 
@@ -296,6 +315,88 @@ static void updateOrientation()
     }
 }
 
+static CGPoint projectPoint(CGPoint point){
+    
+    // handle rotated framebuffer on iPad and Retina devices
+    CGPoint point2;
+    if (is_iPad) {
+        point2.x = screen_height - 1 - point.y;
+        point2.y = point.x;
+    } else {
+        point2.x = point.x;
+        point2.y = point.y;
+    }
+    point2.x *= retina_factor;
+    point2.y *= retina_factor;
+    return point2;
+}
+
+static mach_port_t clientPortAtPosition(CGPoint point) {
+
+    CGPoint point2 = projectPoint(point);
+
+    mach_port_t port_(0);
+    if (CAWindowServer *server = [CAWindowServer serverIfRunning]) {
+        NSArray *displays([server displays]);
+        if (displays != nil && [displays count] != 0) {
+            if (CAWindowServerDisplay *display = [displays objectAtIndex:0]) {
+                port_ = [display clientPortAtPosition:point2];
+                 // NSLog(@"MouseSupport: clientPortAtPosition - display %p, orientation %d, screen (%f, %f), coord (%f, %f) -> port %x",
+                 //    display, orientation_, screen_width, screen_height, point.x, point.y, port_);
+            }
+        }
+    }
+    return port_;
+}
+
+static CFDataRef mouseCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfData, void *info)
+{
+    // orig:
+    // static BOOL idleTimerDisabled = NO;
+
+    // NOTE: Handle the most common case first
+    if (msgid == MouseMessageTypeEvent) {
+        // Handle the mouse event
+        if (CFDataGetLength(cfData) == sizeof(MouseEvent)) {
+            MouseEvent *event = (MouseEvent *)[(NSData *)cfData bytes];
+            if (event != NULL) {
+                SpringBoard *springBoard = (SpringBoard *)[UIApplication sharedApplication];
+                if (event->absolute)
+                    [springBoard handleMouseEventAtPoint:CGPointMake(event->x, event->y) buttons:event->buttons];
+                else
+                    [springBoard handleMouseEventWithX:event->x Y:event->y buttons:event->buttons];
+                    
+                    // from BTstack Keyboard                    
+                    bool wasDimmed = [[$SBAwayController sharedAwayController] isDimmed ];
+                    bool wasLocked = [[$SBAwayController sharedAwayController] isLocked ];
+                    
+                    // prevent dimming - from BTstack Keyboard
+                    [(SpringBoard *) [UIApplication sharedApplication] resetIdleTimerAndUndim:true];
+                    
+                    // handle user unlock
+                    if ( wasDimmed || wasLocked ){
+                        [[$SBAwayController sharedAwayController] attemptUnlock];
+                        [[$SBAwayController sharedAwayController] unlockWithSound:NO];
+                    }
+
+            }
+        }
+    } else if (msgid == MouseMessageTypeSetEnabled) {
+        // Make sure pointer is visible and matches device orientation
+        if (CFDataGetLength(cfData) == sizeof(BOOL)) {
+            BOOL *enabled = (BOOL *)[(NSData *)cfData bytes];
+            if (enabled != NULL) {
+                SpringBoard *springBoard = (SpringBoard *)[UIApplication sharedApplication];
+                [springBoard setMousePointerEnabled:(*enabled)];
+            }
+        }
+    } else {
+        NSLog(@"Mouse: Unknown message type: %x", msgid); 
+    }
+
+    // Do not return a reply to the caller
+    return NULL;
+}
 #define QuartzCore "/System/Library/Frameworks/QuartzCore.framework/QuartzCore"
 // NOTE: The mouse pointer image interferes with hit tests as the pointer
 //       covers the point being clicked. To work around this, make hit tests
@@ -352,7 +453,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
             // Create a mouse pointer and add to the window
             mouseView = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"MousePointer.png"]];
             mouseImageSize = mouseView.bounds.size;
-            NSLog(@"image size %f,%f", mouseImageSize.width, mouseImageSize.height);
+            // NSLog(@"image size %f,%f", mouseImageSize.width, mouseImageSize.height);
             
             [mouseWin addSubview:mouseView];
             
@@ -439,40 +540,11 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     return point;
 }
 
-%new(i@:{CGPoint=ff})
--(mach_port_t)clientPortAtPosition:(CGPoint)point {
-    mach_port_t port_(0);
-    if (CAWindowServer *server = [CAWindowServer serverIfRunning]) {
-        NSArray *displays([server displays]);
-        if (displays != nil && [displays count] != 0) {
-            if (CAWindowServerDisplay *display = [displays objectAtIndex:0]) {
-                port_ = [display clientPortAtPosition:point];
-                NSLog(@"MouseSupport: clientPortAtPosition - display %p, orientation %d, screen (%f, %f), coord (%f, %f) -> port %x",
-                    display, orientation_, screen_width, screen_height, point.x, point.y, port_);
-            }
-        }
-    }
-    return port_;
-}
-
 %new(v@:^v)
--(void)sendCustomEvent:(void *) event{
-    // handle rotated framebuffer on iPad
-    CGPoint point = [self mouseLocation];
-    CGPoint point2;
-    if (is_iPad) {
-        point2.x = screen_height - 1 - point.y;
-        point2.y = point.x;
-    } else {
-        point2.x = point.x;
-        point2.y = point.y;
-    }
-
-    point2.x *= retina_factor;
-    point2.y *= retina_factor;
-
+-(void)sendCustomMouseEvent:(void *) event{
     mach_port_t purple(0);
-    mach_port_t port_ = [self clientPortAtPosition:point2];
+    CGPoint point = [self mouseLocation];
+    mach_port_t port_ = clientPortAtPosition(point);
     if (port_ == 0) {
         // Is SpringBoard
         if (purple == 0)
@@ -604,33 +676,8 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
             // Button down and was not down before, get correct app and keep reference
             port_ = 0;
 
-            // handle rotated framebuffer on iPad
-            CGPoint point2;
-            if (is_iPad) {
-                point2.x = screen_height - 1 - point.y;
-                point2.y = point.x;
-            } else {
-                point2.x = point.x;
-                point2.y = point.y;
-            }
-
-            point2.x *= retina_factor;
-            point2.y *= retina_factor;
-
-#if 0
-            // NSLog(@"point %f,%f - mouseView.origin %f,%f (o=%d)", point.x, point.y, mouseView.origin.x, mouseView.origin.y, orientation_);
-            if (CAWindowServer *server = [CAWindowServer serverIfRunning]) {
-                NSArray *displays([server displays]);
-                if (displays != nil && [displays count] != 0) {
-                    if (CAWindowServerDisplay *display = [displays objectAtIndex:0]) {
-                        port_ = [display clientPortAtPosition:point2];
-                        NSLog(@"orientation %d, screen (%f, %f), coord (%f, %f), coord2 (%f,%f) -> port %x", orientation_, screen_width, screen_height, point.x, point.y, point2.x, point2.y, (int) port_);
-                    }
-                }
-            }
-#else
-            port_ = [self clientPortAtPosition:point2];
-#endif
+            CGPoint point2 = projectPoint(point);
+            port_ = clientPortAtPosition(point2);
 
             if (port_ == 0) {
                 // Is SpringBoard
@@ -709,6 +756,13 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     if ([[UIDevice currentDevice] respondsToSelector:@selector(userInterfaceIdiom)]){
         is_iPad = [[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad;
     }
+
+    // handle retina devices (checks for iOS4.x)
+    if ([[UIScreen mainScreen] respondsToSelector:@selector(displayLinkWithTarget:selector:)]){
+        UIScreen *mainScreen = [UIScreen mainScreen];
+        retina_factor = mainScreen.scale;
+        NSLog(@" MouseSupport: retina factor %f", retina_factor);
+    }
 }
 
 %end
@@ -767,97 +821,9 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
    [self moveMousePointerToPoint:currentMouseLocation];
 }
 
--(void)applicationDidFinishLaunching:(id)fp8 {
-
-    %orig;
-    
-    NSLog(@"MouseSupport 3.2+ applicationDidFinishLaunching");
-
-    // iPad has rotated framebuffer
-    if ([[UIDevice currentDevice] respondsToSelector:@selector(userInterfaceIdiom)]){
-        is_iPad = [[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad;
-    }
-
-    // handle retina devices (checks for iOS4.x)
-    if ([[UIScreen mainScreen] respondsToSelector:@selector(displayLinkWithTarget:selector:)]){
-        UIScreen *mainScreen = [UIScreen mainScreen];
-        retina_factor = mainScreen.scale;
-        NSLog(@" MouseSupport: retina factor %f", retina_factor);
-    }
-}
-%end
-
 %end // GFirmware32x
 
 //==============================================================================
-
-static CFDataRef mouseCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfData, void *info)
-{
-    // orig:
-    // static BOOL idleTimerDisabled = NO;
-
-    // NOTE: Handle the most common case first
-    if (msgid == MouseMessageTypeEvent) {
-        // Handle the mouse event
-        if (CFDataGetLength(cfData) == sizeof(MouseEvent)) {
-            MouseEvent *event = (MouseEvent *)[(NSData *)cfData bytes];
-            if (event != NULL) {
-                SpringBoard *springBoard = (SpringBoard *)[UIApplication sharedApplication];
-                if (event->absolute)
-                    [springBoard handleMouseEventAtPoint:CGPointMake(event->x, event->y) buttons:event->buttons];
-                else
-                    [springBoard handleMouseEventWithX:event->x Y:event->y buttons:event->buttons];
-                    
-                    // from BTstack Keyboard                    
-                    bool wasDimmed = [[$SBAwayController sharedAwayController] isDimmed ];
-                    bool wasLocked = [[$SBAwayController sharedAwayController] isLocked ];
-                    
-                    // prevent dimming - from BTstack Keyboard
-                    [(SpringBoard *) [UIApplication sharedApplication] resetIdleTimerAndUndim:true];
-                    
-                    // handle user unlock
-                    if ( wasDimmed || wasLocked ){
-                        [[$SBAwayController sharedAwayController] attemptUnlock];
-                        [[$SBAwayController sharedAwayController] unlockWithSound:NO];
-                    }
-
-            }
-        }
-    } else if (msgid == MouseMessageTypeSetEnabled) {
-        // Make sure pointer is visible and matches device orientation
-        if (CFDataGetLength(cfData) == sizeof(BOOL)) {
-            BOOL *enabled = (BOOL *)[(NSData *)cfData bytes];
-            if (enabled != NULL) {
-                SpringBoard *springBoard = (SpringBoard *)[UIApplication sharedApplication];
-                [springBoard setMousePointerEnabled:(*enabled)];
-            }
-        }
-    } else {
-        NSLog(@"Mouse: Unknown message type: %x", msgid); 
-    }
-
-    // Do not return a reply to the caller
-	return NULL;
-}
-
-//==============================================================================
-
-template <typename Type_>
-static inline void lookupSymbol(const char *libraryFilePath, const char *symbolName, Type_ &function)
-{
-    // Lookup the function
-    struct nlist nl[2];
-    memset(nl, 0, sizeof(nl));
-    nl[0].n_un.n_name = (char *)symbolName;
-    nlist(libraryFilePath, nl);
-
-    // Check whether it is ARM or Thumb
-    uintptr_t value = nl[0].n_value;
-    if ((nl[0].n_desc & N_ARM_THUMB_DEF) != 0)
-        value |= 0x00000001;
-
-    function = reinterpret_cast<Type_>(value);
-}
 
 __attribute__((constructor)) static void init()
 {
@@ -881,12 +847,6 @@ __attribute__((constructor)) static void init()
         cloakingSupport = YES;
     }
     
-    if (!cloakingSupport){
-        NSLog(@"Hit test not found, simulating cloaking support");
-    }
-    
-    NSLog(@"MouseSupport - ctor");
-
     Class $SpringBoard = objc_getClass("SpringBoard");
     if (class_getInstanceMethod($SpringBoard, @selector(noteInterfaceOrientationChanged:))) {
         // Firmware >= 3.2
@@ -899,7 +859,6 @@ __attribute__((constructor)) static void init()
     if (dlsym(RTLD_DEFAULT, "GSLibraryCopyGenerationInfoValueForKey")){
         is_50 = YES;
     }
-    NSLog(@"is_50 = %u");
     
     %init;
 }
