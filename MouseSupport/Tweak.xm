@@ -157,7 +157,6 @@ typedef enum {
 - (void)handleMouseEventWithX:(float)x Y:(float)y buttons:(int)buttons;
 - (void)moveMousePointerToPoint:(CGPoint)point;
 - (CGPoint)mouseLocation;
-- (mach_port_t)clientPortAtPosition:(CGPoint)point;
 @end
 
 #define APP_ID "jp.ashikase.mousesupport"
@@ -316,6 +315,12 @@ static CGPoint projectPoint(CGPoint point){
 }
 
 static mach_port_t clientPortAtPosition(CGPoint point) {
+
+    // pointing to our mouse pointer
+    if (!cloakingSupport){
+        if (point.x >= 1.0) point.x -= 1.0f;
+        if (point.y >= 1.0) point.y -= 1.0f;
+    }
 
     CGPoint point2 = projectPoint(point);
 
@@ -499,6 +504,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 %new(v@:^v)
 -(void)sendCustomMouseEvent:(void *) event{
     mach_port_t purple(0);
+
     mach_port_t port_ = clientPortAtPosition(currentMouseLocation);
     if (port_ == 0) {
         // Is SpringBoard
@@ -620,11 +626,6 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
         event.data.path.x01 = 0x02;
         event.data.path.x02 = tis ? 0x03 : 0x00;
         event.data.path.position = event.record.locationInWindow;
-
-        if (!cloakingSupport){
-            if (point.x >= 1.0) point.x -= 1.0f;
-            if (point.y >= 1.0) point.y -= 1.0f;
-        }
 
         static mach_port_t port_(0);
         if (twas != tis && tis) {
