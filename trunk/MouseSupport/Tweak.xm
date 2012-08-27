@@ -159,6 +159,7 @@ typedef enum {
 - (CGPoint)mouseLocation;
 @end
 
+
 #define APP_ID "jp.ashikase.mousesupport"
 #define MACH_PORT_NAME APP_ID
 
@@ -386,6 +387,116 @@ static CFDataRef mouseCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef c
     // Do not return a reply to the caller
     return NULL;
 }
+
+//
+// support for notification center gestures 
+//
+
+#define EDGE_THRESHOLD 2.0f
+#define ACTIVATE_THRESHOLD 100.0f;
+
+@interface SBBulletinListController : NSObject 
+-(void)showListViewAnimated:(BOOL)animated;
+-(void)hideListViewAnimated:(BOOL)animated;
+-(BOOL)listViewIsActive;
+@end
+
+typedef enum {
+    no_touch = 1,
+    swipe_from_top,
+    swipe_from_bottom,
+    wait_for_release
+} gesture_t;
+static gesture_t gesture_state = no_touch;
+
+float getMouseInterfaceYForCurrentOrientation(CGPoint point){
+    switch (orientation_) {
+        default:
+        case 0: // Home button bottom
+            return point.y;
+        case 90: // Home button right
+            return screen_width - point.x;
+        case -90: // Home button left
+            return point.x;
+        case 180: // Home button top
+            return screen_height - point.y;
+    }
+}
+float getInterfaceHeightForCurrentOrientation(void){
+    switch (orientation_) {
+        default:
+        case 0:   // Home button bottom
+        case 180: // Home button top
+            return screen_height;
+        case -90: // Home button left
+        case 90:  // Home button right
+            return screen_width;
+    }
+}
+BOOL mouseAtTopEdge(CGPoint point){
+    return getMouseInterfaceYForCurrentOrientation(point) <= EDGE_THRESHOLD;
+}
+BOOL mouseAtBottomEdge(CGPoint point){
+    return getInterfaceHeightForCurrentOrientation() - getMouseInterfaceYForCurrentOrientation(point) <= EDGE_THRESHOLD;
+}
+BOOL mouseBelowTopThreshold(CGPoint point){
+    return getMouseInterfaceYForCurrentOrientation(point) >= ACTIVATE_THRESHOLD;
+}
+BOOL mouseAboveBottomThreshold(CGPoint point){
+    return getInterfaceHeightForCurrentOrientation() - getMouseInterfaceYForCurrentOrientation(point) >= ACTIVATE_THRESHOLD;
+}
+
+// return true if event was handled/eaten
+BOOL handleNotificationCenterGestures(CGPoint point, int button){
+
+    static Class class_SBBulletinListController = objc_getClass("SBBulletinListController");
+    if (!class_SBBulletinListController) return false;
+
+    SBBulletinListController * controller = (SBBulletinListController*) [class_SBBulletinListController sharedInstance];
+    if (!controller) return false;
+
+    BOOL isShown = [controller listViewIsActive];
+
+    // state = local state + list view is active 
+    switch (gesture_state){
+        case no_touch:
+            if (!button) break;
+            if (isShown){
+                if (!mouseAtBottomEdge(point)) break;
+                gesture_state = swipe_from_bottom;
+            } else {
+                if (!mouseAtTopEdge(point)) break;
+                gesture_state = swipe_from_top;
+            }
+            return true;
+        case swipe_from_top:
+            if (!button || isShown){
+                gesture_state = no_touch;
+                break;
+            }
+            if (!mouseBelowTopThreshold(point)) break;
+            [controller showListViewAnimated:YES];
+            gesture_state = wait_for_release;
+            return true;
+        case swipe_from_bottom:
+            if (!button || !isShown){
+                gesture_state = no_touch;
+                break;
+            }
+            if (!mouseAboveBottomThreshold(point)) break;
+            [controller hideListViewAnimated:YES];
+            gesture_state = wait_for_release;
+            return true;
+        case wait_for_release:
+            if (button) break;
+            gesture_state = no_touch;
+            return true;
+    }
+    return false;
+}
+
+// END NOTIFICATION CENTER CODE
+
 #define QuartzCore "/System/Library/Frameworks/QuartzCore.framework/QuartzCore"
 // NOTE: The mouse pointer image interferes with hit tests as the pointer
 //       covers the point being clicked. To work around this, make hit tests
@@ -591,6 +702,11 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     }
 
     if (twas != tis || tis) {
+
+        // support notification center
+        BOOL done = handleNotificationCenterGestures(point, tis);
+        if (done) return;
+
         // Main (left button) state changed, or was dragged
         struct {
             struct GSEventRecord record;
@@ -643,10 +759,11 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
         // NSLog(@"point %f,%f - port %p", point.x, point.y, port_);
 
         GSSendEvent(&event.record, port_);
+        
+        if (purple != 0 && PurpleAllocated) {
+            mach_port_deallocate(mach_task_self(), purple);
+        }
     }
-
-    if (purple != 0 && PurpleAllocated)
-        mach_port_deallocate(mach_task_self(), purple);
 }
 
 
