@@ -154,7 +154,7 @@ typedef enum {
 - (void)mouseUndim;
 - (void)setMousePointerEnabled:(BOOL)enabled;
 - (void)handleMouseEventAtPoint:(CGPoint)point buttons:(int)buttons;
-- (void)handleMouseEventWithX:(float)x Y:(float)y buttons:(int)buttons;
+- (CGPoint)handleMouseEventWithX:(float)x Y:(float)y buttons:(int)buttons;
 - (void)moveMousePointerToPoint:(CGPoint)point;
 - (CGPoint)mouseLocation;
 @end
@@ -331,8 +331,8 @@ static mach_port_t clientPortAtPosition(CGPoint point) {
         if (displays != nil && [displays count] != 0) {
             if (CAWindowServerDisplay *display = [displays objectAtIndex:0]) {
                 port_ = [display clientPortAtPosition:point2];
-                 NSLog(@"MouseSupport: clientPortAtPosition - display %p, orientation %d, screen (%f, %f), coord (%f, %f) -> port %x",
-                    display, orientation_, screen_width, screen_height, point.x, point.y, port_);
+                 // NSLog(@"MouseSupport: clientPortAtPosition - display %p, orientation %d, screen (%f, %f), coord (%f, %f) -> port %x",
+                 //    display, orientation_, screen_width, screen_height, point.x, point.y, port_);
             }
         }
     }
@@ -616,7 +616,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 -(void)sendCustomMouseEvent:(void *) event{
     mach_port_t purple(0);
 
-    mach_port_t port_ = clientPortAtPosition(currentMouseLocation);
+    mach_port_t port_ = clientPortAtPosition(CGPointMake(100,100));
     if (port_ == 0) {
         // Is SpringBoard
         if (purple == 0)
@@ -769,8 +769,8 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 
 
 // NOTE: Values of x and y are relative to the previous value, not absolute
-%new(v@:{CGPoint=ff}i)
-- (void)handleMouseEventWithX:(float)x Y:(float)y buttons:(int)buttons
+%new({CGPoint=ff}@:{CGPoint=ff}i)
+- (CGPoint)handleMouseEventWithX:(float)x Y:(float)y buttons:(int)buttons
 {
     x *= mouseSpeed;
     y *= mouseSpeed;
@@ -798,12 +798,28 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
             break;
     }
 
-    if (point.x < 0) point.x = 0;
-    if (point.x > screen_width)  point.x = screen_width;
-    if (point.y < 0) point.y = 0;
-    if (point.y > screen_height) point.y = screen_height;
+    CGPoint outer = { 0,0 };
+
+    if (point.x < 0) {
+        outer.x = point.x;
+        point.x = 0;
+    }
+    if (point.x > screen_width) {
+        outer.x = point.x - screen_width;
+        point.x = screen_width;
+    }
+    if (point.y < 0) {
+        outer.y = point.y;
+        point.y = 0;
+    }
+    if (point.y > screen_height) {
+        outer.y = point.y - screen_height;
+        point.y = screen_height;
+    }
 
     [self handleMouseEventAtPoint:point buttons:buttons];
+
+    return outer;
 }
 
 - (void)applicationDidFinishLaunching:(UIApplication *)application
@@ -830,9 +846,9 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 
     // Get initial screen size
     // FIXME: Consider adding support for TVOut* users
-    CGRect rect = [[UIScreen mainScreen] bounds];
-    screen_width = rect.size.width;
-    screen_height = rect.size.height;
+    CGRect rect   = [[UIScreen mainScreen] bounds];
+    screen_width  = rect.size.width  -1;
+    screen_height = rect.size.height -1;
     // NSLog(@"MouseSupport: screen size: %f x %f", screen_width, screen_height);
     
     // iPad has rotated framebuffer
