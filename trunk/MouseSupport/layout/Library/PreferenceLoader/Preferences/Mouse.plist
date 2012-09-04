@@ -63,9 +63,9 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Bluetooth Mouse &amp; Trackpad</string>
+			<string>BTC Mouse &amp; Trackpad</string>
 			<key>footerText</key>
-			<string>Features only available as part of the Bluetooth Mouse and Trackpad package.</string>
+			<string>Features only available as part of the BTC Mouse and Trackpad package.</string>
 		</dict>
 		<dict>
 			<key>bundle</key>
@@ -119,20 +119,6 @@
 					<string>© 2012 Matthias Ringwald</string>
 				</dict>
 			</array>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>label</key>
-			<string>Automatic Panning</string>
-			<key>default</key>
-			<true/>
-			<key>key</key>
-			<string>panning</string>
-			<key>defaults</key>
-			<string>ch.ringwald.btc-mouse</string>
-			<key>PostNotification</key>
-			<string>ch.ringwald.btc-mouse.settings</string>
 		</dict>
 	</array>
 </dict>
