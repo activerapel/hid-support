@@ -42,6 +42,10 @@
 			<string>Speed</string>
 		</dict>
 		<dict>
+			<key>leftImage</key>
+			<string>turtle.png</string>
+			<key>rightImage</key>
+			<string>hare.png</string>
 			<key>cell</key>
 			<string>PSSliderCell</string>
 			<key>default</key>
@@ -51,7 +55,7 @@
 			<key>max</key>
 			<integer>4</integer>
 			<key>showValue</key>
-			<true/>
+			<false/>
 			<key>key</key>
 			<string>mouseSpeed</string>
 			<key>defaults</key>
@@ -65,7 +69,7 @@
 			<key>label</key>
 			<string>BTC Mouse &amp; Trackpad</string>
 			<key>footerText</key>
-			<string>Features only available as part of the BTC Mouse and Trackpad package.</string>
+			<string>Presentation mode only available as part of the BTC Mouse &amp; Trackpad package.</string>
 		</dict>
 		<dict>
 			<key>bundle</key>
