@@ -86,6 +86,10 @@ typedef struct {} Context;
 
 @interface SpringBoard : UIApplication
 - (void)resetIdleTimerAndUndim:(BOOL)fp8;
+// active UI on 3.2+
+-(int) activeInterfaceOrientation;
+// frontmost app port on 6.0+
+-(unsigned)_frontmostApplicationPort;
 @end
 
 @interface SBAwayController : NSObject
@@ -194,7 +198,10 @@ static BOOL cloakingSupport = NO;
 static BOOL is_iPad = NO;
 
 // iOS 5
-static BOOL is_50 = NO;
+static BOOL is_50_or_higher = NO;
+
+// iOS 6
+static BOOL is_60_or_higher = NO;
 
 // Window server uses bitmap coordinates
 static float retina_factor = 1.0f;
@@ -299,40 +306,53 @@ static void updateOrientation()
     mouseView.transform = CGAffineTransformMakeRotation(orientation_ * M_PI / 180.0f);
 }
 
-static CGPoint projectPoint(CGPoint point){
-    
-    // handle rotated framebuffer on iPad and Retina devices
-    CGPoint point2;
-    if (is_iPad) {
-        point2.x = screen_height - 1 - point.y;
-        point2.y = point.x;
-    } else {
-        point2.x = point.x;
-        point2.y = point.y;
-    }
-    point2.x *= retina_factor;
-    point2.y *= retina_factor;
-    return point2;
-}
-
 static mach_port_t clientPortAtPosition(CGPoint point) {
 
-    // pointing to our mouse pointer
-    if (!cloakingSupport){
-        if (point.x >= 1.0) point.x -= 1.0f;
-        if (point.y >= 1.0) point.y -= 1.0f;
+    if (is_60_or_higher){
+        return [(SpringBoard*) [UIApplication sharedApplication] _frontmostApplicationPort];
     }
 
-    CGPoint point2 = projectPoint(point);
+    // get point just to the upper left of our mouse pointer
+    if (!cloakingSupport){
+        switch (orientation_) {
+            default:
+            case 0: // Home button bottom
+                point.x -= 1.0f;
+                point.y -= 1.0f;
+                break;
+            case 90: // Home button right
+                point.x += 1.0f;
+                point.y -= 1.0f;
+                break;
+            case -90: // Home button left
+                point.x -= 1.0f;
+                point.y += 1.0f;
+                break;
+            case 180: // Home button top
+                point.x += 1.0f;
+                point.y += 1.0f;
+                break;
+        }
+    }
 
     mach_port_t port_(0);
     if (CAWindowServer *server = [CAWindowServer serverIfRunning]) {
         NSArray *displays([server displays]);
         if (displays != nil && [displays count] != 0) {
             if (CAWindowServerDisplay *display = [displays objectAtIndex:0]) {
+               CGPoint point2;
+               if (is_iPad) {
+                    point2.x = screen_height - 1 - point.y;
+                    point2.y = point.x;
+                } else {
+                    point2.x = point.x;
+                    point2.y = point.y;
+                }
+                point2.x *= retina_factor;
+                point2.y *= retina_factor;
                 port_ = [display clientPortAtPosition:point2];
-                 // NSLog(@"MouseSupport: clientPortAtPosition - display %p, orientation %d, screen (%f, %f), coord (%f, %f) -> port %x",
-                 //    display, orientation_, screen_width, screen_height, point.x, point.y, port_);
+                //  NSLog(@"MouseSupport: clientPortAtPosition - orientation %d, screen (%f, %f), coord (%f, %f) coord2 (%f, %f) -> port %x",
+                //          orientation_, screen_width, screen_height, point.x, point.y, point2.x, point2.y, port_);
             }
         }
     }
@@ -537,8 +557,6 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 {
     if (enabled) {
 
-        [self mouseUndim];
-
         if (mouseWin == nil) {
             // Create a transparent window that will float above everything else
             // NOTE: The window level value was not chosen scientifically; it is
@@ -732,7 +750,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
         event.data.info.handInfo.x34 = 0x1;
         event.data.info.handInfo.x38 = tis ? 0x1 : 0x0;
 
-        if (is_50){
+        if (is_50_or_higher){
             event.data.info.x52 = 1;
         } else {
             event.data.info.pathPositions = 1;
@@ -889,10 +907,34 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 // NOTE: Only hooked for firmware >= 3.2
 
 %hook SpringBoard
-- (void)noteInterfaceOrientationChanged:(int)orientation
-{
+-(void)frontDisplayDidChange{
+
     %orig;
 
+    // Update pointer orientation
+    switch ([self activeInterfaceOrientation]) {
+        case UIInterfaceOrientationPortraitUpsideDown:
+            orientation_ = 180;
+            break;
+        case UIInterfaceOrientationLandscapeLeft:
+            orientation_ = -90;
+            break;
+        case UIInterfaceOrientationLandscapeRight:
+            orientation_ = 90;
+            break;
+        case UIInterfaceOrientationPortrait:
+        default:
+            orientation_ = 0;
+    };
+
+    updateOrientation();
+    [self moveMousePointerToPoint:currentMouseLocation];
+}
+
+- (void)noteInterfaceOrientationChanged:(int)orientation
+{
+
+    %orig;
     // Update pointer orientation
     switch (orientation) {
         case UIInterfaceOrientationPortraitUpsideDown:
@@ -910,6 +952,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     }
 
     updateOrientation();
+
     [self moveMousePointerToPoint:currentMouseLocation];
 }
 %end // GFirmware32x
@@ -917,7 +960,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 //==============================================================================
 
 __attribute__((constructor)) static void init()
-{
+{   
     MSHookSymbol(GSTakePurpleSystemEventPort, "GSGetPurpleSystemEventPort");
     if (GSTakePurpleSystemEventPort == NULL) {
         MSHookSymbol(GSTakePurpleSystemEventPort, "GSCopyPurpleSystemEventPort");
@@ -947,8 +990,12 @@ __attribute__((constructor)) static void init()
         %init(GFirmware3x);
     }
 
+    if (dlsym(RTLD_DEFAULT, "GSGetPurpleWorkspacePort")){
+        is_60_or_higher = YES;
+    }
+
     if (dlsym(RTLD_DEFAULT, "GSLibraryCopyGenerationInfoValueForKey")){
-        is_50 = YES;
+        is_50_or_higher = YES;
     }
     
     %init;
