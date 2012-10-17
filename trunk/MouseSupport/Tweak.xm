@@ -260,9 +260,12 @@ static void loadPreferences()
         if ([obj isKindOfClass:[NSNumber class]])
             swapButtonsOneTwo = [obj boolValue];
 
-        obj = [values objectAtIndex:1];
-        if ([obj isKindOfClass:[NSNumber class]])
-            swapButtonsTwoThree = [obj boolValue];
+        //
+        // ignore swap buttons 2 & 3
+        //
+        // obj = [values objectAtIndex:1];
+        // if ([obj isKindOfClass:[NSNumber class]])
+        //     swapButtonsTwoThree = [obj boolValue];
 
         obj = [values objectAtIndex:2];
         if ([obj isKindOfClass:[NSNumber class]])
