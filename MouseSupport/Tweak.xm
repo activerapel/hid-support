@@ -185,11 +185,9 @@ static CGPoint currentMouseLocation = { 0, 0};
 #define BUTTON_PRIMARY   0x01
 #define BUTTON_SECONDARY 0x02
 #define BUTTON_TERTIARY  0x04
-static BOOL swapButtonsTwoThree = NO;
-static BOOL swapButtonsOneTwo = NO;
 static char buttonClick = BUTTON_PRIMARY;
-static char buttonHome  = BUTTON_SECONDARY;
-static char buttonLock  = BUTTON_TERTIARY;
+static char buttonLock  = BUTTON_SECONDARY;
+static char buttonHome  = BUTTON_TERTIARY;
 
 // cloaking works
 static BOOL cloakingSupport = NO;
@@ -244,8 +242,7 @@ static inline void lookupSymbol(const char *libraryFilePath, const char *symbolN
 static void loadPreferences()
 {
     // defaults
-    swapButtonsOneTwo = NO;
-    swapButtonsTwoThree = NO;
+    BOOL swapButtonsLeftRight = NO;
     mouseSpeed = 1.0f;
 
     NSArray *keys = [NSArray arrayWithObjects:@"swapButtonsOneTwo", @"swapButtonsTwoThree", @"mouseSpeed", nil];
@@ -258,14 +255,11 @@ static void loadPreferences()
 
         obj = [values objectAtIndex:0];
         if ([obj isKindOfClass:[NSNumber class]])
-            swapButtonsOneTwo = [obj boolValue];
+            swapButtonsLeftRight = [obj boolValue];
 
         //
         // ignore swap buttons 2 & 3
         //
-        // obj = [values objectAtIndex:1];
-        // if ([obj isKindOfClass:[NSNumber class]])
-        //     swapButtonsTwoThree = [obj boolValue];
 
         obj = [values objectAtIndex:2];
         if ([obj isKindOfClass:[NSNumber class]])
@@ -275,24 +269,14 @@ static void loadPreferences()
     }
 
     // set mouse buttons
-    if (swapButtonsOneTwo) {
-        buttonClick = BUTTON_SECONDARY;
-        if (swapButtonsTwoThree){
-            buttonHome = BUTTON_TERTIARY;
-            buttonLock = BUTTON_PRIMARY;
-        } else {
-            buttonHome = BUTTON_PRIMARY;
-            buttonLock = BUTTON_TERTIARY;
-        }
+    if (swapButtonsLeftRight) {
+        buttonHome  = BUTTON_PRIMARY;
+        buttonLock  = BUTTON_SECONDARY;
+        buttonClick = BUTTON_TERTIARY;
     } else {
         buttonClick = BUTTON_PRIMARY;
-        if (swapButtonsTwoThree){
-            buttonHome = BUTTON_TERTIARY;
-            buttonLock = BUTTON_SECONDARY;
-        } else {
-            buttonHome = BUTTON_SECONDARY;
-            buttonLock = BUTTON_TERTIARY;
-        }
+        buttonLock  = BUTTON_SECONDARY;
+        buttonHome  = BUTTON_TERTIARY;
     }
 }
 
@@ -312,6 +296,9 @@ static void updateOrientation()
 static mach_port_t clientPortAtPosition(CGPoint point) {
 
     if (is_60_or_higher){
+        // if device is locked, events have to go to SpringBoard
+        if ([[$SBAwayController sharedAwayController] isLocked]) return 0;
+        // otherwise, SB knows what's in front
         return [(SpringBoard*) [UIApplication sharedApplication] _frontmostApplicationPort];
     }
 
