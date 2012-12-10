@@ -54,6 +54,8 @@ typedef enum {
 // unlock && undim on 3.0 & 3.1
 @interface SpringBoard : NSObject
 - (void)resetIdleTimerAndUndim:(BOOL)fp8;
+// frontmost app port on 6.0+
+-(unsigned)_frontmostApplicationPort;
 @end
 
 @interface SBAwayController : NSObject
@@ -121,7 +123,7 @@ static float mouse_y = 0;
 // access to system event server
 static mach_port_t (*GSTakePurpleSystemEventPort)(void);
 static bool PurpleAllocated;
-static int Level_;  // 0 = < 3.0, 1 = 3.0-3.1.x, 2 = 3.2-4.3.3, 3 = 5.0+
+static int Level_;  // 0 = < 3.0, 1 = 3.0-3.1.x, 2 = 3.2-4.3.3, 3 = 5.0-5.1.1, 4 = 6.0+
 
 // iPad support
 static int is_iPad = 0;
@@ -134,6 +136,10 @@ static void dlset(Type_ &function, const char *name) {
 
 // project GSEventRecord for OS < 3 if needed
 void detectOSLevel(){
+    if (dlsym(RTLD_DEFAULT, "GSGetPurpleWorkspacePort")){
+        Level_ = 4;
+    }
+
     if (dlsym(RTLD_DEFAULT, "GSLibraryCopyGenerationInfoValueForKey")){
         Level_ = 3;
         return;
@@ -183,6 +189,13 @@ static void sendGSEventToSpringBoard(GSEventRecord *eventRecord){
 static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
 
     mach_port_t port(0);
+
+    if (Level_ >= 4) {
+        port = [(SpringBoard*) [UIApplication sharedApplication] _frontmostApplicationPort];
+        GSSendEvent(eventRecord, port);
+        return;
+    }
+
     mach_port_t purple(0);
     
     if (CAWindowServer *server = [CAWindowServer serverIfRunning]) {
@@ -226,6 +239,9 @@ static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
 static GSHandInfoType getHandInfoType(int touch_before, int touch_now){
     if (!touch_before) {
         return (GSHandInfoType) kGSHandInfoType2TouchDown;
+    }
+    if (touch_before == touch_now){
+        return (GSHandInfoType) kGSHandInfoType2TouchDragged;        
     }
     if (touch_now) {
         return (GSHandInfoType) kGSHandInfoType2TouchChange;
@@ -579,8 +595,3 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
     }
 }
 %end
-
-// Main init
-// __attribute__((constructor)) static void init(){
-// }
-
