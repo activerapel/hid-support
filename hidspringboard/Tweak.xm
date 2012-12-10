@@ -138,6 +138,7 @@ static void dlset(Type_ &function, const char *name) {
 void detectOSLevel(){
     if (dlsym(RTLD_DEFAULT, "GSGetPurpleWorkspacePort")){
         Level_ = 4;
+        return;
     }
 
     if (dlsym(RTLD_DEFAULT, "GSLibraryCopyGenerationInfoValueForKey")){
@@ -192,6 +193,7 @@ static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
 
     if (Level_ >= 4) {
         port = [(SpringBoard*) [UIApplication sharedApplication] _frontmostApplicationPort];
+        NSLog(@"sendGSEvent, app port %x", port);
         GSSendEvent(eventRecord, port);
         return;
     }
