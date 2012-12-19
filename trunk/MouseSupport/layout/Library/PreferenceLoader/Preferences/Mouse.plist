@@ -82,9 +82,9 @@
 			<key>key</key>
 			<string>disableScrollwheel</string>
 			<key>defaults</key>
-			<string>jp.ashikase.mousesupport</string>
+			<string>ch.ringwald.btc-mouse.settings</string>
 			<key>PostNotification</key>
-			<string>jp.ashikase.mousesupport-settings</string>
+			<string>ch.ringwald.btc-mouse.settings</string>
 		</dict>
 		
 		<dict>
@@ -149,11 +149,11 @@
 			<key>isController</key>
 			<string>1</string>
 			<key>label</key>
-			<string>Two finger tap</string>
+			<string>Two finger touch</string>
 			<key>ALSettingsPath</key>
 			<string>/var/mobile/Library/Preferences/ch.ringwald.btc-mouse.plist</string>
 			<key>ALSettingsKeyPrefix</key>
-			<string>twoFingerTap-</string>
+			<string>twoFingerTouch-</string>
 			<key>ALChangeNotification</key>
 			<string>ch.ringwald.btc-mouse.settings</string>
 			<key>ALAllowsSelection</key>
@@ -164,7 +164,7 @@
 					<key>items</key>
 					<array/>
 					<key>footer-title</key>
-					<string>If 'Two finger tap' is enabled, pressing the right mouse button will simulate a short two finger tap. This can be used in remote desktop apps to trigger a right click on the remote system.</string>
+					<string>If 'Two finger touch' is enabled, pressing the right mouse button will simulate a  two finger touch at the pointer location. This can be used in remote desktop apps to trigger a right click or to scroll on the remote system.</string>
 				</dict>
 				<dict>
 					<key>title</key>
