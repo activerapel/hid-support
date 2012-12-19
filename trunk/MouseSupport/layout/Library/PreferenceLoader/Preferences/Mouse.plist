@@ -69,8 +69,24 @@
 			<key>label</key>
 			<string>BTC Mouse &amp; Trackpad</string>
 			<key>footerText</key>
-			<string>Presentation mode is only available as part of the BTC Mouse &amp; Trackpad package.</string>
+			<string>'Presentation mode' and 'Two finger tap' only work with BTC Mouse &amp; Trackpad.</string>
 		</dict>
+
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>label</key>
+			<string>Disable scrollwheel</string>
+			<key>default</key>
+			<false/>
+			<key>key</key>
+			<string>disableScrollwheel</string>
+			<key>defaults</key>
+			<string>jp.ashikase.mousesupport</string>
+			<key>PostNotification</key>
+			<string>jp.ashikase.mousesupport-settings</string>
+		</dict>
+		
 		<dict>
 			<key>bundle</key>
 			<string>AppList</string>
@@ -95,6 +111,60 @@
 					<array/>
 					<key>footer-title</key>
 					<string>If presentation mode is enabled, pressing the left or right mouse button will generate a left or right swipe respectively. Use with Keynote, forScore, and other reading and presentation software. </string>
+				</dict>
+				<dict>
+					<key>title</key>
+					<string>System Applications</string>
+					<key>predicate</key>
+					<string>isSystemApplication = TRUE</string>
+					<key>cell-class-name</key>
+					<string>ALSwitchCell</string>
+					<key>icon-size</key>
+					<string>29</string>
+					<key>suppress-hidden-apps</key>
+					<string>1</string>
+				</dict>
+				<dict>
+					<key>title</key>
+					<string>User Applications</string>
+					<key>predicate</key>
+					<string>isSystemApplication = FALSE</string>
+					<key>cell-class-name</key>
+					<string>ALSwitchCell</string>
+					<key>icon-size</key>
+					<string>29</string>
+					<key>suppress-hidden-apps</key>
+					<string>1</string>
+					<key>footer-title</key>
+					<string>© 2012 Matthias Ringwald</string>
+				</dict>
+			</array>
+		</dict>
+
+		<dict>
+			<key>bundle</key>
+			<string>AppList</string>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>isController</key>
+			<string>1</string>
+			<key>label</key>
+			<string>Two finger tap</string>
+			<key>ALSettingsPath</key>
+			<string>/var/mobile/Library/Preferences/ch.ringwald.btc-mouse.plist</string>
+			<key>ALSettingsKeyPrefix</key>
+			<string>twoFingerTap-</string>
+			<key>ALChangeNotification</key>
+			<string>ch.ringwald.btc-mouse.settings</string>
+			<key>ALAllowsSelection</key>
+			<string>1</string>
+			<key>ALSectionDescriptors</key>
+			<array>
+				<dict>
+					<key>items</key>
+					<array/>
+					<key>footer-title</key>
+					<string>If 'Two finger tap' is enabled, pressing the right mouse button will simulate a short two finger tap. This can be used in remote desktop apps to trigger a right click on the remote system.</string>
 				</dict>
 				<dict>
 					<key>title</key>
