@@ -1,6 +1,6 @@
 Package: jp.ashikase.mousesupport
 Name: MouseSupport
-Version: svn.r209
+Version: svn.r210
 Architecture: iphoneos-arm
 Description: Pointer and external input extension
 Homepage: http://code.google.com/p/hid-support
