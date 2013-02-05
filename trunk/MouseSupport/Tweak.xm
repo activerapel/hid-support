@@ -161,6 +161,7 @@ typedef enum {
 - (CGPoint)handleMouseEventWithX:(float)x Y:(float)y buttons:(int)buttons;
 - (void)moveMousePointerToPoint:(CGPoint)point;
 - (CGPoint)mouseLocation;
+- (void)mouseHandleOrientationChange:(int)orientation;
 @end
 
 
@@ -830,6 +831,28 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     return outer;
 }
 
+%new
+-(void)mouseHandleOrientationChange:(int)orientation{
+    // Update pointer orientation
+    switch (orientation) {
+        case UIInterfaceOrientationPortraitUpsideDown:
+            orientation_ = 180;
+            break;
+        case UIInterfaceOrientationLandscapeLeft:
+            orientation_ = -90;
+            break;
+        case UIInterfaceOrientationLandscapeRight:
+            orientation_ = 90;
+            break;
+        case UIInterfaceOrientationPortrait:
+        default:
+            orientation_ = 0;
+    }
+    updateOrientation();
+    [self moveMousePointerToPoint:currentMouseLocation];
+}
+
+
 - (void)applicationDidFinishLaunching:(UIApplication *)application
 {
     %orig;
@@ -878,7 +901,6 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 
 %group GFirmware3x
 // NOTE: Only hooked for firmware < 3.2
-
 %hook SpringBoard
 - (void)noteUIOrientationChanged:(int)orientation display:(id)display
 {
@@ -895,57 +917,27 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 
 %group GFirmware32x
 // NOTE: Only hooked for firmware >= 3.2
-
 %hook SpringBoard
 -(void)frontDisplayDidChange{
-
     %orig;
-
-    // Update pointer orientation
-    switch ([self activeInterfaceOrientation]) {
-        case UIInterfaceOrientationPortraitUpsideDown:
-            orientation_ = 180;
-            break;
-        case UIInterfaceOrientationLandscapeLeft:
-            orientation_ = -90;
-            break;
-        case UIInterfaceOrientationLandscapeRight:
-            orientation_ = 90;
-            break;
-        case UIInterfaceOrientationPortrait:
-        default:
-            orientation_ = 0;
-    };
-
-    updateOrientation();
-    [self moveMousePointerToPoint:currentMouseLocation];
+    [self mouseHandleOrientationChange:[self activeInterfaceOrientation]];
 }
 
 - (void)noteInterfaceOrientationChanged:(int)orientation
 {
-
     %orig;
-    // Update pointer orientation
-    switch (orientation) {
-        case UIInterfaceOrientationPortraitUpsideDown:
-            orientation_ = 180;
-            break;
-        case UIInterfaceOrientationLandscapeLeft:
-            orientation_ = -90;
-            break;
-        case UIInterfaceOrientationLandscapeRight:
-            orientation_ = 90;
-            break;
-        case UIInterfaceOrientationPortrait:
-        default:
-            orientation_ = 0;
-    }
-
-    updateOrientation();
-
-    [self moveMousePointerToPoint:currentMouseLocation];
+    [self mouseHandleOrientationChange:orientation];
 }
 %end // GFirmware32x
+%end // GFirmware32x
+
+%group GFirmware6x
+%hook SpringBoard
+-(void)noteInterfaceOrientationChanged:(int)orientation duration:(double)duration{
+    %orig;
+    [self mouseHandleOrientationChange:orientation];
+}
+%end
 %end
 //==============================================================================
 
@@ -980,12 +972,13 @@ __attribute__((constructor)) static void init()
         %init(GFirmware3x);
     }
 
-    if (dlsym(RTLD_DEFAULT, "GSGetPurpleWorkspacePort")){
-        is_60_or_higher = YES;
-    }
-
     if (dlsym(RTLD_DEFAULT, "GSLibraryCopyGenerationInfoValueForKey")){
         is_50_or_higher = YES;
+    }
+
+    if (dlsym(RTLD_DEFAULT, "GSGetPurpleWorkspacePort")){
+        is_60_or_higher = YES;
+        %init(GFirmware6x);
     }
     
     %init;
