@@ -546,35 +546,42 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 %new(v@:c)
 - (void)setMousePointerEnabled:(BOOL)enabled
 {
+    static int pointerRefCount = 0;
+
+    // update ref count
     if (enabled) {
+        pointerRefCount++;
+    } else if (pointerRefCount > 0){
+        pointerRefCount--;
+    }
 
-        if (mouseWin == nil) {
-            // Create a transparent window that will float above everything else
-            // NOTE: The window level value was not chosen scientifically; it is
-            //       assumed to be large enough (the largest values used by
-            //       SpringBoard seen so far have been less than 2000).
-            mouseWin = [[UIWindow alloc] initWithFrame:CGRectZero];
-            mouseWin.windowLevel = 3000;
+    if (pointerRefCount) {
+        if (mouseWin) return;
+        // Create a transparent window that will float above everything else
+        // NOTE: The window level value was not chosen scientifically; it is
+        //       assumed to be large enough (the largest values used by
+        //       SpringBoard seen so far have been less than 2000).
+        mouseWin = [[UIWindow alloc] initWithFrame:CGRectZero];
+        mouseWin.windowLevel = 3000;
 
-            [mouseWin setUserInteractionEnabled:NO];
-            [mouseWin setHidden:NO];
+        [mouseWin setUserInteractionEnabled:NO];
+        [mouseWin setHidden:NO];
 
-            // Create a mouse pointer and add to the window
-            mouseView = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"MousePointer.png"]];
-            mouseImageSize = mouseView.bounds.size;
-            // NSLog(@"image size %f,%f", mouseImageSize.width, mouseImageSize.height);
-            
-            [mouseWin addSubview:mouseView];
-            
-            // Set the initial orientation and limits for the pointer
-            updateOrientation();
+        // Create a mouse pointer and add to the window
+        mouseView = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"MousePointer.png"]];
+        mouseImageSize = mouseView.bounds.size;
+        // NSLog(@"image size %f,%f", mouseImageSize.width, mouseImageSize.height);
+        
+        [mouseWin addSubview:mouseView];
+        
+        // Set the initial orientation and limits for the pointer
+        updateOrientation();
 
-            if (cloakingSupport) {
-                // Store the address of the window's render context to cloak it from clicks
-                CAContextImpl *&_layerContext = MSHookIvar<CAContextImpl *>(mouseWin, "_layerContext");
-                if (&_layerContext != NULL)
-                    mouseRenderContext = [_layerContext renderContext];
-            }
+        if (cloakingSupport) {
+            // Store the address of the window's render context to cloak it from clicks
+            CAContextImpl *&_layerContext = MSHookIvar<CAContextImpl *>(mouseWin, "_layerContext");
+            if (&_layerContext != NULL)
+                mouseRenderContext = [_layerContext renderContext];
         }
     } else {
         mouseRenderContext = NULL;
