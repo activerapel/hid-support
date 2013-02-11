@@ -24,7 +24,6 @@ static inline void MyMSHookSymbol(Type_ *&value, const char *name, void *handle 
     value = reinterpret_cast<Type_ *>(dlsym(handle, name));
 }
 
-
 extern "C" uint64_t GSCurrentEventTimestamp(void);
 extern "C" GSEventRef _GSCreateSyntheticKeyEvent(UniChar key, BOOL up, BOOL repeating);
 
@@ -99,10 +98,12 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 // globals
 
 // GS functions
-GSEventRef (*$GSEventCreateKeyEvent)(int, CGPoint, CFStringRef, CFStringRef, uint32_t, UniChar, short, short);
-GSEventRef (*$GSCreateSyntheticKeyEvent)(UniChar, BOOL, BOOL);
-void       (*$GSEventSetKeyCode)(GSEventRef event, uint16_t keyCode);
-
+GSEventRef  (*$GSEventCreateKeyEvent)(int, CGPoint, CFStringRef, CFStringRef, uint32_t, UniChar, short, short);
+GSEventRef  (*$GSCreateSyntheticKeyEvent)(UniChar, BOOL, BOOL);
+void        (*$GSEventSetKeyCode)(GSEventRef event, uint16_t keyCode);
+mach_port_t (*GSTakePurpleSystemEventPort)(void);
+CGSize      (*$GSMainScreenSize)(void);
+float       (*$GSMainScreenScaleFactor)(void);
 
 // GSEvent being sent
 static uint8_t  touchEvent[sizeof(GSEventRecord) + sizeof(GSHandInfo) + sizeof(GSPathInfo)];
@@ -121,17 +122,16 @@ static float mouse_x = 0;
 static float mouse_y = 0;
 
 // access to system event server
-static mach_port_t (*GSTakePurpleSystemEventPort)(void);
 static bool PurpleAllocated;
 static int Level_;  // 0 = < 3.0, 1 = 3.0-3.1.x, 2 = 3.2-4.3.3, 3 = 5.0-5.1.1, 4 = 6.0+
 
 // iPad support
 static int is_iPad = 0;
 
-
 template <typename Type_>
 static void dlset(Type_ &function, const char *name) {
     function = reinterpret_cast<Type_>(dlsym(RTLD_DEFAULT, name));
+    // NSLog(@"hid-support: dlset %s = %p", name, function);
 }
 
 // project GSEventRecord for OS < 3 if needed
@@ -191,13 +191,6 @@ static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
 
     mach_port_t port(0);
 
-    if (Level_ >= 4) {
-        port = [(SpringBoard*) [UIApplication sharedApplication] _frontmostApplicationPort];
-        NSLog(@"sendGSEvent, app port %x", port);
-        GSSendEvent(eventRecord, port);
-        return;
-    }
-
     mach_port_t purple(0);
     
     if (CAWindowServer *server = [CAWindowServer serverIfRunning]) {
@@ -215,10 +208,11 @@ static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
                 point2.x *= retina_factor;
                 point2.y *= retina_factor;
                 port = [display clientPortAtPosition:point2];
-                // NSLog(@"display port : %x", (int) port_);
             }
         }
     }
+
+    // NSLog(@"display port : %x", (int) port);
     
     if (!port) {
         if (!purple) {
@@ -478,7 +472,8 @@ static void keepAwake(void){
 
 static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfData, void *info) {
 
-    //NSLog(@"hidsupport callback, msg %u", msgid);
+    // NSLog(@"hidsupport callback, msg %u", msgid);
+    
     const char *data = (const char *) CFDataGetBytePtr(cfData);
     uint16_t dataLen = CFDataGetLength(cfData);
     char *buffer;
@@ -554,10 +549,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
     return returnData;  // as stated in header, both data and returnData will be released for us after callback returns
 }
 
-%hook SpringBoard
--(void)applicationDidFinishLaunching:(id)fp8 {
-
-    %orig;
+static void init_graphicsservices(void){
 
     // GraphicsServices used
     MyMSHookSymbol(GSTakePurpleSystemEventPort, "GSGetPurpleSystemEventPort");
@@ -565,14 +557,23 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
         MyMSHookSymbol(GSTakePurpleSystemEventPort, "GSCopyPurpleSystemEventPort");
         PurpleAllocated = true;
     }
-	dlset($GSEventCreateKeyEvent, "GSEventCreateKeyEvent");
+    dlset($GSEventCreateKeyEvent, "GSEventCreateKeyEvent");
     dlset($GSCreateSyntheticKeyEvent, "_GSCreateSyntheticKeyEvent");
-    dlset($GSEventSetKeyCode, "_GSEventSetKeyCode");
+    dlset($GSEventSetKeyCode, "GSEventSetKeyCode");
+    dlset($GSMainScreenSize, "GSMainScreenSize");
+    dlset($GSMainScreenScaleFactor, "GSMainScreenScaleFactor");
+}
+
+%group SpringBoardHooks
+%hook SpringBoard
+-(void)applicationDidFinishLaunching:(id)fp8 {
+
+    %orig;
+
+    init_graphicsservices();
     detectOSLevel();
 
     // Setup a mach port for receiving mouse events from outside of SpringBoard
-    // NOTE (by ashikase): Using kCFRunLoopDefaultMode causes issues when dragging SpringBoard's
-    //       scrollview; why kCFRunLoopCommonModes fixes the issue, I do not know.
     CFMessagePortRef local = CFMessagePortCreateLocal(NULL, CFSTR(HID_SUPPORT_PORT_NAME), myCallBack, NULL, false);
     CFRunLoopSourceRef source = CFMessagePortCreateRunLoopSource(NULL, local, 0);
     CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
@@ -593,7 +594,50 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
     // handle retina devices (checks for iOS4.x)
     if ([[UIScreen mainScreen] respondsToSelector:@selector(displayLinkWithTarget:selector:)]){
         retina_factor = [UIScreen mainScreen].scale;
-        NSLog(@"retina factor %f", retina_factor);
     }
+    // NSLog(@"hid-support: screen size: %f x %f", screen_width, screen_height);
+    // NSLog(@"hid-support: retina factor %f", retina_factor);
+    // NSLog(@"hid-support: is_iPad %u", is_iPad);
 }
 %end
+%end
+
+static void init_backboardd(void){
+
+    init_graphicsservices();
+    detectOSLevel();
+
+    // Setup a mach port for receiving events from outside of backboardd
+    CFMessagePortRef local = CFMessagePortCreateLocal(NULL, CFSTR(HID_SUPPORT_PORT_NAME_BB), myCallBack, NULL, false);
+    CFRunLoopSourceRef source = CFMessagePortCreateRunLoopSource(NULL, local, 0);
+    CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
+
+    // Get main screen size
+    // FIXME: Consider adding support for TVOut* users
+    CGSize screenSize = $GSMainScreenSize();
+    float  retina_factor = $GSMainScreenScaleFactor();
+    screen_width = screenSize.width / retina_factor;
+    screen_height = screenSize.height / retina_factor;
+    mouse_max_x = screen_width - 1;
+    mouse_max_y = screen_height - 1;
+    
+    // detect iPad - UIKit does the same
+    // iPad has rotated framebuffer
+    is_iPad = screen_width > 640.f; 
+
+    // NSLog(@"hid-support: screen size: %f x %f", screen_width, screen_height);
+    // NSLog(@"hid-support: retina factor %f", retina_factor);
+    // NSLog(@"hid-support: is_iPad %u", is_iPad);
+}
+
+%ctor{
+
+    %init();
+
+    Class springboard = %c(SpringBoard);
+    if (springboard) {
+        %init(SpringBoardHooks);
+    } else {
+        init_backboardd();
+    }
+}
