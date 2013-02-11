@@ -39,7 +39,8 @@ extern "C" {
 	
 #include "hid-support.h"
 
-#define HID_SUPPORT_PORT_NAME "ch.ringwald.hidsupport"
+#define HID_SUPPORT_PORT_NAME    "ch.ringwald.hidsupport"
+#define HID_SUPPORT_PORT_NAME_BB "ch.ringwald.hidsupport.backboard"
 
 typedef enum hid_event_type {
 	TEXT = 1,
