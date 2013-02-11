@@ -48,12 +48,23 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "substrate.h"
 
-#include <substrate.h>
-#include <mach/mach.h>
+// #define MSHook(type, name, args...) \
+//     __attribute__((unused)) static type (*_ ## name)(args); \
+//     static type $ ## name(args)
+// #define MSHake(name) \
+//     &$ ## name, &_ ## name
+// #include <mach/mach.h>
+// #include <mach-o/nlist.h>
+// #include <objc/runtime.h>
 
 #import <GraphicsServices/GraphicsServices.h>
 #import <QuartzCore/QuartzCore.h>
+
+#include "hid-support.h"
+
+#define CA_CLOAKING
 
 typedef struct {
     float x, y;
@@ -216,8 +227,6 @@ static Class $SBAwayController = objc_getClass("SBAwayController");
 //==============================================================================
 
 // NOTE: Swiped from Jay Freeman (saurik)'s Veency
-static mach_port_t (*GSTakePurpleSystemEventPort)(void);
-static bool PurpleAllocated;
 template <typename Type_>
 
 //==============================================================================
@@ -292,62 +301,6 @@ static void reloadPreferences(CFNotificationCenterRef center, void *observer,
 static void updateOrientation()
 {
     mouseView.transform = CGAffineTransformMakeRotation(orientation_ * M_PI / 180.0f);
-}
-
-static mach_port_t clientPortAtPosition(CGPoint point) {
-
-    if (is_60_or_higher){
-        // if device is locked, events have to go to SpringBoard
-        if ([[$SBAwayController sharedAwayController] isLocked]) return 0;
-        // otherwise, SB knows what's in front
-        return [(SpringBoard*) [UIApplication sharedApplication] _frontmostApplicationPort];
-    }
-
-    // get point just to the upper left of our mouse pointer
-    if (!cloakingSupport){
-        switch (orientation_) {
-            default:
-            case 0: // Home button bottom
-                point.x -= 1.0f;
-                point.y -= 1.0f;
-                break;
-            case 90: // Home button right
-                point.x += 1.0f;
-                point.y -= 1.0f;
-                break;
-            case -90: // Home button left
-                point.x -= 1.0f;
-                point.y += 1.0f;
-                break;
-            case 180: // Home button top
-                point.x += 1.0f;
-                point.y += 1.0f;
-                break;
-        }
-    }
-
-    mach_port_t port_(0);
-    if (CAWindowServer *server = [CAWindowServer serverIfRunning]) {
-        NSArray *displays([server displays]);
-        if (displays != nil && [displays count] != 0) {
-            if (CAWindowServerDisplay *display = [displays objectAtIndex:0]) {
-               CGPoint point2;
-               if (is_iPad) {
-                    point2.x = screen_height - 1 - point.y;
-                    point2.y = point.x;
-                } else {
-                    point2.x = point.x;
-                    point2.y = point.y;
-                }
-                point2.x *= retina_factor;
-                point2.y *= retina_factor;
-                port_ = [display clientPortAtPosition:point2];
-                //  NSLog(@"MouseSupport: clientPortAtPosition - orientation %d, screen (%f, %f), coord (%f, %f) coord2 (%f, %f) -> port %x",
-                //          orientation_, screen_width, screen_height, point.x, point.y, point2.x, point2.y, port_);
-            }
-        }
-    }
-    return port_;
 }
 
 static CFDataRef mouseCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfData, void *info)
@@ -508,6 +461,8 @@ BOOL handleNotificationCenterGestures(CGPoint point, int button){
 
 // END NOTIFICATION CENTER CODE
 
+#ifdef CA_CLOAKING
+
 #define QuartzCore "/System/Library/Frameworks/QuartzCore.framework/QuartzCore"
 // NOTE: The mouse pointer image interferes with hit tests as the pointer
 //       covers the point being clicked. To work around this, make hit tests
@@ -523,6 +478,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 {
     return (context == mouseRenderContext) ? NULL : __ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj(context, point, unknown);
 }
+#endif
 
 %hook SpringBoard
 
@@ -630,21 +586,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 
 %new(v@:^v)
 -(void)sendCustomMouseEvent:(void *) event{
-    mach_port_t purple(0);
-
-    mach_port_t port_ = clientPortAtPosition(CGPointMake(100,100));
-    if (port_ == 0) {
-        // Is SpringBoard
-        if (purple == 0)
-            purple = (*GSTakePurpleSystemEventPort)();
-        port_ = purple;
-    }
-    // NSLog(@"point %f,%f - port %p", point.x, point.y, port_);
-
-    GSSendEvent((GSEventRecord *) event, port_);
-
-    if (purple != 0 && PurpleAllocated)
-        mach_port_deallocate(mach_task_self(), purple);
+    hid_inject_gseventrecord((uint8_t*)event);
 }
 
 // NOTE: Swiped and modified from Jay Freeman (saurik)'s Veency
@@ -670,7 +612,6 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     [self moveMousePointerToPoint:point];
 
     // Check for mouse button events
-    mach_port_t purple(0);
 
     if ((diff & 0x10) != 0) {
         // Simulate Headset button press
@@ -723,62 +664,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
         BOOL done = handleNotificationCenterGestures(point, tis);
         if (done) return;
 
-        // Main (left button) state changed, or was dragged
-        struct {
-            struct GSEventRecord record;
-            struct {
-                struct GSEventRecordInfo info;
-                struct GSPathInfo path;
-            } data;
-        } event;
-
-        memset(&event, 0, sizeof(event));
-
-        event.record.type = GSEventTypeMouse;
-        event.record.locationInWindow = point;
-        event.record.timestamp = GSCurrentEventTimestamp();
-        event.record.size = sizeof(event.data);
-
-        event.data.info.handInfo.type = twas == tis ?
-            GSMouseEventTypeDragged :
-        tis ?
-            GSMouseEventTypeDown :
-            GSMouseEventTypeUp;
-
-        event.data.info.handInfo.x34 = 0x1;
-        event.data.info.handInfo.x38 = tis ? 0x1 : 0x0;
-
-        if (is_50_or_higher){
-            event.data.info.x52 = 1;
-        } else {
-            event.data.info.pathPositions = 1;
-        }
-
-        event.data.path.x00 = 0x01;
-        event.data.path.x01 = 0x02;
-        event.data.path.x02 = tis ? 0x03 : 0x00;
-        event.data.path.position = event.record.locationInWindow;
-
-        static mach_port_t port_(0);
-        if (twas != tis && tis) {
-
-            // Button down and was not down before, get app port and keep reference
-            port_ = clientPortAtPosition(point);
-
-            if (port_ == 0) {
-                // Is SpringBoard
-                if (purple == 0)
-                    purple = (*GSTakePurpleSystemEventPort)();
-                port_ = purple;
-            }
-        }
-        // NSLog(@"point %f,%f - port %p", point.x, point.y, port_);
-
-        GSSendEvent(&event.record, port_);
-        
-        if (purple != 0 && PurpleAllocated) {
-            mach_port_deallocate(mach_task_self(), purple);
-        }
+        hid_inject_mouse_abs_move(buttons & 1, point.x, point.y);
     }
 }
 
@@ -948,28 +834,24 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 %end
 //==============================================================================
 
-__attribute__((constructor)) static void init()
-{   
-    MSHookSymbol(GSTakePurpleSystemEventPort, "GSGetPurpleSystemEventPort");
-    if (GSTakePurpleSystemEventPort == NULL) {
-        MSHookSymbol(GSTakePurpleSystemEventPort, "GSCopyPurpleSystemEventPort");
-        PurpleAllocated = true;
-    }
+%ctor {
 
+#ifdef CA_CLOAKING
     void * (*_ZN2CA6Render7Context8hit_testE7CGPointj)(Context *, CGPoint, unsigned int);
-    lookupSymbol(QuartzCore, "__ZN2CA6Render7Context8hit_testE7CGPointj",   _ZN2CA6Render7Context8hit_testE7CGPointj);
+    lookupSymbol(QuartzCore, "__ZN2CA6Render7Context8hit_testE7CGPointj", _ZN2CA6Render7Context8hit_testE7CGPointj);
     if (_ZN2CA6Render7Context8hit_testE7CGPointj) {
         MSHookFunction(_ZN2CA6Render7Context8hit_testE7CGPointj, MSHake(_ZN2CA6Render7Context8hit_testE7CGPointj));
         cloakingSupport = YES;
     }
     
     void * (*_ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj)(Context *, void *, unsigned int);
-    lookupSymbol(QuartzCore, "__ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj",   _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj);
+    lookupSymbol(QuartzCore, "__ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj", _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj);
     if (!cloakingSupport && _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj) {
         MSHookFunction(_ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, MSHake(_ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj));
         cloakingSupport = YES;
     }
-    
+#endif 
+
     Class $SpringBoard = objc_getClass("SpringBoard");
     if (class_getInstanceMethod($SpringBoard, @selector(noteInterfaceOrientationChanged:))) {
         // Firmware >= 3.2
@@ -987,6 +869,8 @@ __attribute__((constructor)) static void init()
         is_60_or_higher = YES;
         %init(GFirmware6x);
     }
+
+    NSLog(@"MouseSupport loaded");
     
     %init;
 }
