@@ -198,7 +198,7 @@ static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
         if (displays != nil && [displays count] != 0){
             if (CAWindowServerDisplay *display = [displays objectAtIndex:0]) { 
                CGPoint point2;
-               if (is_iPad) {
+               if (screen_width > screen_height) {
                     point2.x = screen_height - 1 - point.y;
                     point2.y = point.x;
                 } else {
@@ -208,11 +208,12 @@ static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
                 point2.x *= retina_factor;
                 point2.y *= retina_factor;
                 port = [display clientPortAtPosition:point2];
+                // NSLog(@"display port : %x at %f/%f", (int) port, point2.x, point2.y);
             }
         }
     }
 
-    // NSLog(@"display port : %x", (int) port);
+    // NSLog(@"display port : %x at %f/%f", (int) port, point2.x, point2.y);
     
     if (!port) {
         if (!purple) {
