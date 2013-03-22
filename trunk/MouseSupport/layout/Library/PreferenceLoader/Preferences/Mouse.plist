@@ -82,7 +82,7 @@
 			<key>key</key>
 			<string>disableScrollwheel</string>
 			<key>defaults</key>
-			<string>ch.ringwald.btc-mouse.settings</string>
+			<string>ch.ringwald.btc-mouse</string>
 			<key>PostNotification</key>
 			<string>ch.ringwald.btc-mouse.settings</string>
 		</dict>
