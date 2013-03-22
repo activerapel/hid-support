@@ -80,7 +80,7 @@
 			<key>default</key>
 			<false/>
 			<key>key</key>
-			<string>disableScrollwheel</string>
+			<string>disableScrollWheel</string>
 			<key>defaults</key>
 			<string>ch.ringwald.btc-mouse</string>
 			<key>PostNotification</key>
