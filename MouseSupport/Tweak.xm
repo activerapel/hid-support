@@ -832,10 +832,17 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 }
 %end
 %end
+
+static void orientationUpdateListener(CFNotificationCenterRef center, void *observer,
+    CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+    SpringBoard *springBoard = (SpringBoard *)[UIApplication sharedApplication];
+    [springBoard mouseHandleOrientationChange:[springBoard activeInterfaceOrientation]];
+}
 //==============================================================================
 
 %ctor {
 
+// only makes sense before iOS 6 - later, CARenderServer is part of backboardd
 #ifdef CA_CLOAKING
     void * (*_ZN2CA6Render7Context8hit_testE7CGPointj)(Context *, CGPoint, unsigned int);
     lookupSymbol(QuartzCore, "__ZN2CA6Render7Context8hit_testE7CGPointj", _ZN2CA6Render7Context8hit_testE7CGPointj);
@@ -868,6 +875,15 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     if (dlsym(RTLD_DEFAULT, "GSGetPurpleWorkspacePort")){
         is_60_or_higher = YES;
         %init(GFirmware6x);
+
+        // register for orientation events on iOS 6
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            NULL,
+            orientationUpdateListener,
+            CFSTR("com.apple.backboardd.orientation"),
+            NULL,
+            0);
     }
 
     NSLog(@"MouseSupport loaded");
