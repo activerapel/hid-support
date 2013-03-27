@@ -518,7 +518,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
         //       assumed to be large enough (the largest values used by
         //       SpringBoard seen so far have been less than 2000).
         mouseWin = [[UIWindow alloc] initWithFrame:CGRectZero];
-        mouseWin.windowLevel = 3000;
+        mouseWin.windowLevel = 5001;    // CallBar uses 5000
 
         [mouseWin setUserInteractionEnabled:NO];
         [mouseWin setHidden:NO];
