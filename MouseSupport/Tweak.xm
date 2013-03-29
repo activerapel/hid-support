@@ -2,8 +2,6 @@
  * New maintainer/developer: Matthias Ringwald (mringwal)
  * see README for details
  *
- * Current version: svn.r204
- *
  */
 
 /**
@@ -50,21 +48,10 @@
 
 #include "substrate.h"
 
-// #define MSHook(type, name, args...) \
-//     __attribute__((unused)) static type (*_ ## name)(args); \
-//     static type $ ## name(args)
-// #define MSHake(name) \
-//     &$ ## name, &_ ## name
-// #include <mach/mach.h>
-// #include <mach-o/nlist.h>
-// #include <objc/runtime.h>
-
 #import <GraphicsServices/GraphicsServices.h>
 #import <QuartzCore/QuartzCore.h>
 
 #include "hid-support.h"
-
-#define CA_CLOAKING
 
 typedef struct {
     float x, y;
@@ -461,8 +448,6 @@ BOOL handleNotificationCenterGestures(CGPoint point, int button){
 
 // END NOTIFICATION CENTER CODE
 
-#ifdef CA_CLOAKING
-
 #define QuartzCore "/System/Library/Frameworks/QuartzCore.framework/QuartzCore"
 // NOTE: The mouse pointer image interferes with hit tests as the pointer
 //       covers the point being clicked. To work around this, make hit tests
@@ -478,7 +463,6 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 {
     return (context == mouseRenderContext) ? NULL : __ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj(context, point, unknown);
 }
-#endif
 
 %hook SpringBoard
 
@@ -554,6 +538,8 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 {
     currentMouseLocation = point;
 
+    // NSLog(@"moveMousePointerToPoint %f/%f orientation %u, cloakingSupport", point.x, point.y, orientation_, cloakingSupport);
+
     // Get pos of on-screen pointer
     CGPoint mousePoint;
     switch(orientation_){
@@ -561,6 +547,10 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
         case 0:
             mousePoint.x = point.x;
             mousePoint.y = point.y;
+            if (!cloakingSupport){
+                mousePoint.x += 1;
+                mousePoint.y += 1;
+            }
             break;
         case 90:
             mousePoint.x = point.x - mouseImageSize.height;
@@ -842,23 +832,6 @@ static void orientationUpdateListener(CFNotificationCenterRef center, void *obse
 
 %ctor {
 
-// only makes sense before iOS 6 - later, CARenderServer is part of backboardd
-#ifdef CA_CLOAKING
-    void * (*_ZN2CA6Render7Context8hit_testE7CGPointj)(Context *, CGPoint, unsigned int);
-    lookupSymbol(QuartzCore, "__ZN2CA6Render7Context8hit_testE7CGPointj", _ZN2CA6Render7Context8hit_testE7CGPointj);
-    if (_ZN2CA6Render7Context8hit_testE7CGPointj) {
-        MSHookFunction(_ZN2CA6Render7Context8hit_testE7CGPointj, MSHake(_ZN2CA6Render7Context8hit_testE7CGPointj));
-        cloakingSupport = YES;
-    }
-    
-    void * (*_ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj)(Context *, void *, unsigned int);
-    lookupSymbol(QuartzCore, "__ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj", _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj);
-    if (!cloakingSupport && _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj) {
-        MSHookFunction(_ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, MSHake(_ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj));
-        cloakingSupport = YES;
-    }
-#endif 
-
     Class $SpringBoard = objc_getClass("SpringBoard");
     if (class_getInstanceMethod($SpringBoard, @selector(noteInterfaceOrientationChanged:))) {
         // Firmware >= 3.2
@@ -886,7 +859,24 @@ static void orientationUpdateListener(CFNotificationCenterRef center, void *obse
             0);
     }
 
-    NSLog(@"MouseSupport loaded");
+    // only makes sense before iOS 6 - later, CARenderServer is part of backboardd now
+    if (!is_60_or_higher){
+        void * (*_ZN2CA6Render7Context8hit_testE7CGPointj)(Context *, CGPoint, unsigned int);
+        lookupSymbol(QuartzCore, "__ZN2CA6Render7Context8hit_testE7CGPointj", _ZN2CA6Render7Context8hit_testE7CGPointj);
+        if (_ZN2CA6Render7Context8hit_testE7CGPointj) {
+            MSHookFunction(_ZN2CA6Render7Context8hit_testE7CGPointj, MSHake(_ZN2CA6Render7Context8hit_testE7CGPointj));
+            cloakingSupport = YES;
+        }
+        
+        void * (*_ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj)(Context *, void *, unsigned int);
+        lookupSymbol(QuartzCore, "__ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj", _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj);
+        if (!cloakingSupport && _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj) {
+            MSHookFunction(_ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, MSHake(_ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj));
+            cloakingSupport = YES;
+        }
+    }
+
+    // NSLog(@"MouseSupport loaded");
     
     %init;
 }
