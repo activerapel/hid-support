@@ -773,7 +773,6 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     CGRect rect   = [[UIScreen mainScreen] bounds];
     screen_width  = rect.size.width  -1;
     screen_height = rect.size.height -1;
-    // NSLog(@"MouseSupport: screen size: %f x %f", screen_width, screen_height);
     
     // iPad has rotated framebuffer
     if ([[UIDevice currentDevice] respondsToSelector:@selector(userInterfaceIdiom)]){
@@ -784,8 +783,9 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     if ([[UIScreen mainScreen] respondsToSelector:@selector(displayLinkWithTarget:selector:)]){
         UIScreen *mainScreen = [UIScreen mainScreen];
         retina_factor = mainScreen.scale;
-        // NSLog(@" MouseSupport: retina factor %f", retina_factor);
     }
+
+    NSLog(@"MouseSupport: screen size: %f x %f, retina %f, is_iPad %u", screen_width, screen_height, retina_factor, is_iPad);
 }
 
 %end
