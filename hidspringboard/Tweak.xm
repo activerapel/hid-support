@@ -8,10 +8,11 @@
  *   show mouse cursor - decide on keep-alive
  */
   
+#include <dlfcn.h>
 #include <objc/runtime.h>
 #include <mach/mach_port.h>
 #include <mach/mach_init.h>
-#include <dlfcn.h>
+#include <sys/sysctl.h>
 
 // kenytm
 #import <GraphicsServices/GSEvent.h>
@@ -126,7 +127,7 @@ static bool PurpleAllocated;
 static int Level_;  // 0 = < 3.0, 1 = 3.0-3.1.x, 2 = 3.2-4.3.3, 3 = 5.0-5.1.1, 4 = 6.0+
 
 // iPad support
-static int is_iPad = 0;
+static int is_iPad1 = 0;
 
 template <typename Type_>
 static void dlset(Type_ &function, const char *name) {
@@ -193,20 +194,26 @@ static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
 
     mach_port_t purple(0);
     
+   CGPoint point2;
+   if (screen_width > screen_height) {
+        point2.x = screen_height - 1 - point.y;
+        point2.y = point.x;
+        // iPad 1 is rotated the other way
+        if (is_iPad1){
+            point2.x = screen_height - 1 - point2.x;
+            point2.y = screen_width  - 1 - point2.y;
+        }
+    } else {
+        point2.x = point.x;
+        point2.y = point.y;
+    }
+    point2.x *= retina_factor;
+    point2.y *= retina_factor;
+
     if (CAWindowServer *server = [CAWindowServer serverIfRunning]) {
         NSArray *displays([server displays]);
         if (displays != nil && [displays count] != 0){
             if (CAWindowServerDisplay *display = [displays objectAtIndex:0]) { 
-               CGPoint point2;
-               if (screen_width > screen_height) {
-                    point2.x = screen_height - 1 - point.y;
-                    point2.y = point.x;
-                } else {
-                    point2.x = point.x;
-                    point2.y = point.y;
-                }
-                point2.x *= retina_factor;
-                point2.y *= retina_factor;
                 port = [display clientPortAtPosition:point2];
                 // NSLog(@"display port : %x at %f/%f", (int) port, point2.x, point2.y);
             }
@@ -571,6 +578,14 @@ static void init_graphicsservices(void){
     dlset($GSMainScreenScaleFactor, "GSMainScreenScaleFactor");
 }
 
+static void detect_first_generation_iPad(void){
+    size_t size;
+    sysctlbyname("hw.machine", NULL, &size, NULL, 0);
+    char machine[size];
+    sysctlbyname("hw.machine", machine, &size, NULL, 0);
+    is_iPad1 = strcmp(machine, "iPad1,1") == 0;
+}
+
 %group SpringBoardHooks
 %hook SpringBoard
 -(void)applicationDidFinishLaunching:(id)fp8 {
@@ -593,17 +608,14 @@ static void init_graphicsservices(void){
     mouse_max_x = screen_width - 1;
     mouse_max_y = screen_height - 1;
     
-    // iPad has rotated framebuffer
-    if ([[UIDevice currentDevice] respondsToSelector:@selector(userInterfaceIdiom)]){
-        is_iPad = [[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad;
-    }
+    detect_first_generation_iPad();
 
     // handle retina devices (checks for iOS4.x)
     if ([[UIScreen mainScreen] respondsToSelector:@selector(displayLinkWithTarget:selector:)]){
         retina_factor = [UIScreen mainScreen].scale;
     }
 
-    NSLog(@"hid-support (SpringBoard): screen size: %f x %f, retina %f, is_iPad %u", screen_width, screen_height, retina_factor, is_iPad);
+    NSLog(@"hid-support (SpringBoard): screen size: %f x %f, retina %f, is_iPad1 %u", screen_width, screen_height, retina_factor, is_iPad1);
 }
 %end
 %end
@@ -629,9 +641,9 @@ static void init_backboardd(void){
     
     // detect iPad - UIKit does the same
     // iPad has rotated framebuffer
-    is_iPad = screen_width > 640.f; 
+    detect_first_generation_iPad();
 
-    NSLog(@"hid-support (backboardd): screen size: %f x %f, retina %f, is_iPad %u", screen_width, screen_height, retina_factor, is_iPad);
+    NSLog(@"hid-support (backboardd): screen size: %f x %f, retina %f, is_iPad1 %u", screen_width, screen_height, retina_factor, is_iPad1);
 }
 
 %ctor{
