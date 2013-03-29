@@ -371,7 +371,10 @@ static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
 }
 
 static void handleMouseEvent(const mouse_event_t *mouse_event){
-    int new_mouse_x, new_mouse_y;
+
+    // NSLog(@"hid-support (%f/%f) - %u", mouse_event->x, mouse_event->y, mouse_event->buttons);
+
+    float new_mouse_x, new_mouse_y;
     switch (mouse_event->type) {
         case REL_MOVE:
             new_mouse_x = mouse_x + mouse_event->x;
@@ -386,6 +389,9 @@ static void handleMouseEvent(const mouse_event_t *mouse_event){
     }
     mouse_x = box(0, new_mouse_x, mouse_max_x);
     mouse_y = box(0, new_mouse_y, mouse_max_y);
+
+    // NSLog(@"box x [0, %f, %f] = %f", new_mouse_x, mouse_max_x, mouse_x);
+    // NSLog(@"box y [0, %f, %f] = %f", new_mouse_y, mouse_max_y, mouse_y);
 
     int buttons = mouse_event->buttons ? 1 : 0;
     // NSLog(@"MOUSE type %u, button %u, dx %f, dy %f", mouse_event->type, mouse_event->buttons, mouse_event->x, mouse_event->y);
@@ -596,9 +602,8 @@ static void init_graphicsservices(void){
     if ([[UIScreen mainScreen] respondsToSelector:@selector(displayLinkWithTarget:selector:)]){
         retina_factor = [UIScreen mainScreen].scale;
     }
-    // NSLog(@"hid-support: screen size: %f x %f", screen_width, screen_height);
-    // NSLog(@"hid-support: retina factor %f", retina_factor);
-    // NSLog(@"hid-support: is_iPad %u", is_iPad);
+
+    NSLog(@"hid-support (SpringBoard): screen size: %f x %f, retina %f, is_iPad %u", screen_width, screen_height, retina_factor, is_iPad);
 }
 %end
 %end
@@ -626,9 +631,7 @@ static void init_backboardd(void){
     // iPad has rotated framebuffer
     is_iPad = screen_width > 640.f; 
 
-    // NSLog(@"hid-support: screen size: %f x %f", screen_width, screen_height);
-    // NSLog(@"hid-support: retina factor %f", retina_factor);
-    // NSLog(@"hid-support: is_iPad %u", is_iPad);
+    NSLog(@"hid-support (backboardd): screen size: %f x %f, retina %f, is_iPad %u", screen_width, screen_height, retina_factor, is_iPad);
 }
 
 %ctor{
