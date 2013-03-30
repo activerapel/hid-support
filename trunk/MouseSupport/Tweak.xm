@@ -48,7 +48,7 @@
 
 #include "substrate.h"
 
-#import <GraphicsServices/GraphicsServices.h>
+#import <GraphicsServices/GSEvent.h>
 #import <QuartzCore/QuartzCore.h>
 #include <mach/mach_port.h>
 #include <mach/mach_init.h>
@@ -132,7 +132,7 @@ typedef struct {} Context;
 -(void) dismissSwitcherAnimated:(BOOL)animated;
 @end
 
-// #if !defined(__IPHONE_3_2) || __IPHONE_3_2 > __IPHONE_OS_VERSION_MAX_ALLOWED
+#if !defined(__IPHONE_3_2) || __IPHONE_3_2 > __IPHONE_OS_VERSION_MAX_ALLOWED
 typedef enum {
     UIUserInterfaceIdiomPhone,           // iPhone and iPod touch style UI
     UIUserInterfaceIdiomPad,             // iPad style UI
@@ -140,7 +140,7 @@ typedef enum {
 @interface UIDevice (privateAPI)
 - (BOOL) userInterfaceIdiom;
 @end
-// #endif
+#endif
 
 @interface UIView (Private)
 @property(assign) CGPoint origin;
@@ -252,14 +252,7 @@ static inline void MyMSHookSymbol(Type_ *&value, const char *name, void *handle 
 }
 
 //==============================================================================
-#if 0
-typedef enum __GSHandInfoType {
-    kGSHandInfoTypeTouchDown = 0,
-    kGSHandInfoTypeTouchDragged = 1,
-    kGSHandInfoTypeTouchMoved = 4,
-    kGSHandInfoTypeTouchUp = 5,
-    kGSHandInfoTypeCancel = 8
-} GSHandInfoType;
+static uint8_t  touchEvent[sizeof(GSEventRecord) + sizeof(GSHandInfo) + sizeof(GSPathInfo)];
 
 // types for touches
 typedef enum __GSHandInfoType2 {
@@ -315,7 +308,7 @@ static void postMouseEventToSpringBoard(float x, float y, int click){
     event->record.timestamp = GSCurrentEventTimestamp();
     event->record.infoSize = sizeof(GSHandInfo) + sizeof(GSPathInfo);
     event->handInfo.type = getHandInfoType(prev_click, click);
-    if (Level_ >= 3){
+    if (is_50_or_higher){
         event->handInfo.x52 = 1;
     } else {
         event->handInfo.pathInfosCount = 1;
@@ -331,7 +324,6 @@ static void postMouseEventToSpringBoard(float x, float y, int click){
     
     prev_click = click;  
 }
-#endif
 
 //==============================================================================
 
@@ -702,70 +694,48 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     // Get pos of on-screen pointer
     [self moveMousePointerToPoint:point];
 
-#if 0
     // Check for mouse button events
 
     if ((diff & 0x10) != 0) {
         // Simulate Headset button press
         struct GSEventRecord record;
-
         memset(&record, 0, sizeof(record));
-
-        record.type = (buttons & 0x10) != 0 ?
-            GSEventTypeHeadsetButtonDown :
-            GSEventTypeHeadsetButtonUp;
-
         record.timestamp = GSCurrentEventTimestamp();
-
+        record.type = (buttons & 0x10) != 0 ? kGSEventHeadsetButtonDown : kGSEventHeadsetButtonUp;
         GSSendSystemEvent(&record);
     }
 
     if ((diff & buttonHome) != 0) {
         // Simulate Home button press
         struct GSEventRecord record;
-
         memset(&record, 0, sizeof(record));
-
-        record.type = (buttons & buttonHome) != 0 ?
-            GSEventTypeMenuButtonDown :
-            GSEventTypeMenuButtonUp;
-
+        record.type = (buttons & buttonHome) != 0 ? kGSEventMenuButtonDown : kGSEventMenuButtonUp;
         record.timestamp = GSCurrentEventTimestamp();
-
         GSSendSystemEvent(&record);
     }
 
     if ((diff & buttonLock) != 0) {
         // Simulate Sleep/Wake button press
         struct GSEventRecord record;
-
         memset(&record, 0, sizeof(record));
-
-        record.type = (buttons & buttonLock) != 0 ?
-            GSEventTypeLockButtonDown :
-            GSEventTypeLockButtonUp;
-
+        record.type = (buttons & buttonLock) != 0 ? kGSEventLockButtonDown : kGSEventLockButtonUp;
         record.timestamp = GSCurrentEventTimestamp();
-
         GSSendSystemEvent(&record);
     }
-#endif
     
     if (twas != tis || tis) {
-
         // support notification center
         BOOL done = handleNotificationCenterGestures(point, tis);
         if (done) return;
 
-        // handle app switcher dismiss
+        // forward all apps to SpringBoard while app switcher is showing
         SBUIController * controller = [%c(SBUIController) sharedInstance];
         if ([controller respondsToSelector:@selector(isSwitcherShowing)]){
             if ([controller isSwitcherShowing]){
-               // postMouseEventToSpringBoard(point.x, point.y, buttons & 1);
+                postMouseEventToSpringBoard(point.x, point.y, buttons & 1);
                 return;
             }
         }
-
         hid_inject_mouse_abs_move(buttons & 1, point.x, point.y);
     }
 }
