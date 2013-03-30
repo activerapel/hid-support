@@ -50,6 +50,8 @@
 
 #import <GraphicsServices/GraphicsServices.h>
 #import <QuartzCore/QuartzCore.h>
+#include <mach/mach_port.h>
+#include <mach/mach_init.h>
 
 #include "hid-support.h"
 
@@ -122,6 +124,12 @@ typedef struct {} Context;
 - (void)userEventOccurred;
 - (void)activate;
 - (void)deactivate;
+@end
+
+@interface SBUIController : NSObject
++(SBUIController*) sharedInstance;
+-(BOOL) isSwitcherShowing;
+-(void) dismissSwitcherAnimated:(BOOL)animated;
 @end
 
 // #if !defined(__IPHONE_3_2) || __IPHONE_3_2 > __IPHONE_OS_VERSION_MAX_ALLOWED
@@ -211,6 +219,10 @@ static float mouseSpeed = 1.0f;
 
 static Class $SBAwayController = objc_getClass("SBAwayController");
 
+// GS functions
+static bool PurpleAllocated = NO;
+mach_port_t (*GSTakePurpleSystemEventPort)(void);
+
 //==============================================================================
 
 // NOTE: Swiped from Jay Freeman (saurik)'s Veency
@@ -233,6 +245,93 @@ static inline void lookupSymbol(const char *libraryFilePath, const char *symbolN
 
     function = reinterpret_cast<Type_>(value);
 }
+
+template <typename Type_>
+static inline void MyMSHookSymbol(Type_ *&value, const char *name, void *handle = RTLD_DEFAULT) {
+    value = reinterpret_cast<Type_ *>(dlsym(handle, name));
+}
+
+//==============================================================================
+#if 0
+typedef enum __GSHandInfoType {
+    kGSHandInfoTypeTouchDown = 0,
+    kGSHandInfoTypeTouchDragged = 1,
+    kGSHandInfoTypeTouchMoved = 4,
+    kGSHandInfoTypeTouchUp = 5,
+    kGSHandInfoTypeCancel = 8
+} GSHandInfoType;
+
+// types for touches
+typedef enum __GSHandInfoType2 {
+        kGSHandInfoType2TouchDown    = 1,    // first down
+        kGSHandInfoType2TouchDragged = 2,    // drag
+        kGSHandInfoType2TouchChange  = 5,    // nr touches change
+        kGSHandInfoType2TouchFinal   = 6,    // final up
+} GSHandInfoType2;
+
+static void sendGSEventToSpringBoard(GSEventRecord *eventRecord){
+    mach_port_t purple(0);
+    purple = (*GSTakePurpleSystemEventPort)();
+    if (purple) {
+        GSSendEvent(eventRecord, purple);
+    }
+    if (purple && PurpleAllocated){
+        mach_port_deallocate(mach_task_self(), purple);
+    }
+}
+
+// decide on GSHandInfoType
+static GSHandInfoType getHandInfoType(int touch_before, int touch_now){
+    if (!touch_before) {
+        return (GSHandInfoType) kGSHandInfoType2TouchDown;
+    }
+    if (touch_before == touch_now){
+        return (GSHandInfoType) kGSHandInfoType2TouchDragged;        
+    }
+    if (touch_now) {
+        return (GSHandInfoType) kGSHandInfoType2TouchChange;
+    }
+    return (GSHandInfoType) kGSHandInfoType2TouchFinal;
+}
+
+static void postMouseEventToSpringBoard(float x, float y, int click){
+
+    static int prev_click = 0;
+
+    if (!click && !prev_click) return;
+
+    CGPoint location = CGPointMake(x, y);
+
+    // structure of touch GSEvent
+    struct GSTouchEvent {
+        GSEventRecord record;
+        GSHandInfo    handInfo;
+    } * event = (struct GSTouchEvent*) &touchEvent;
+    bzero(touchEvent, sizeof(touchEvent));
+    
+    // set up GSEvent
+    event->record.type = kGSEventHand;
+    event->record.windowLocation = location;
+    event->record.timestamp = GSCurrentEventTimestamp();
+    event->record.infoSize = sizeof(GSHandInfo) + sizeof(GSPathInfo);
+    event->handInfo.type = getHandInfoType(prev_click, click);
+    if (Level_ >= 3){
+        event->handInfo.x52 = 1;
+    } else {
+        event->handInfo.pathInfosCount = 1;
+    }
+    bzero(&event->handInfo.pathInfos[0], sizeof(GSPathInfo));
+    event->handInfo.pathInfos[0].pathIndex     = 1;
+    event->handInfo.pathInfos[0].pathIdentity  = 2;
+    event->handInfo.pathInfos[0].pathProximity = click ? 0x03 : 0x00;;
+    event->handInfo.pathInfos[0].pathLocation  = location;
+
+    // send GSEvent to SpringBoard
+    sendGSEventToSpringBoard( (GSEventRecord*) event);  
+    
+    prev_click = click;  
+}
+#endif
 
 //==============================================================================
 
@@ -579,6 +678,8 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     hid_inject_gseventrecord((uint8_t*)event);
 }
 
+
+
 // NOTE: Swiped and modified from Jay Freeman (saurik)'s Veency
 %new(v@:{CGPoint=ff}i)
 - (void)handleMouseEventAtPoint:(CGPoint)point buttons:(int)buttons
@@ -601,6 +702,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     // Get pos of on-screen pointer
     [self moveMousePointerToPoint:point];
 
+#if 0
     // Check for mouse button events
 
     if ((diff & 0x10) != 0) {
@@ -647,12 +749,22 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 
         GSSendSystemEvent(&record);
     }
-
+#endif
+    
     if (twas != tis || tis) {
 
         // support notification center
         BOOL done = handleNotificationCenterGestures(point, tis);
         if (done) return;
+
+        // handle app switcher dismiss
+        SBUIController * controller = [%c(SBUIController) sharedInstance];
+        if ([controller respondsToSelector:@selector(isSwitcherShowing)]){
+            if ([controller isSwitcherShowing]){
+               // postMouseEventToSpringBoard(point.x, point.y, buttons & 1);
+                return;
+            }
+        }
 
         hid_inject_mouse_abs_move(buttons & 1, point.x, point.y);
     }
@@ -839,6 +951,13 @@ static void orientationUpdateListener(CFNotificationCenterRef center, void *obse
     } else {
         // Firmware < 3.2
         %init(GFirmware3x);
+    }
+
+    // GraphicsServices used
+    MyMSHookSymbol(GSTakePurpleSystemEventPort, "GSGetPurpleSystemEventPort");
+    if (GSTakePurpleSystemEventPort == NULL) {
+        MyMSHookSymbol(GSTakePurpleSystemEventPort, "GSCopyPurpleSystemEventPort");
+        PurpleAllocated = true;
     }
 
     if (dlsym(RTLD_DEFAULT, "GSLibraryCopyGenerationInfoValueForKey")){
