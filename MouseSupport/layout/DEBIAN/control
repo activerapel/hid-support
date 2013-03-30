@@ -8,6 +8,6 @@ Depiction: http://moreinfo.thebigboss.org/moreinfo/depiction.php?file=mousesuppo
 Maintainer: BigBoss <bigboss@thebigboss.org>
 Author: Mattthias Ringwald <tickets@btstack.uservoice.com>
 Section: System
-Depends: mobilesubstrate, firmware (>=3.0), ch.ringwald.hidsupport (>= 0.6), preferenceloader, applist
+Depends: mobilesubstrate, firmware (>=3.0), ch.ringwald.hidsupport (>= 0.7), preferenceloader, applist
 Sponsor: thebigboss.org <http://thebigboss.org>
 Tag: role::hacker
