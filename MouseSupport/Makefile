@@ -8,7 +8,8 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = MouseSupport
 MouseSupport_FILES = Tweak.xm
-MouseSupport_CFLAGS = -I. -I.. -I../../iphone-private-saurik/
+MouseSupport_CFLAGS = -I. -I.. -I../3rdParty
+# -I../../iphone-private-saurik/
 MouseSupport_LDFLAGS = -L../_/usr/local/lib/ -lhidsupport
 MouseSupport_FRAMEWORKS = UIKit QuartzCore CoreGraphics
 MouseSupport_PRIVATE_FRAMEWORKS = GraphicsServices
