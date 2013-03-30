@@ -195,17 +195,19 @@ static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
     mach_port_t purple(0);
     
    CGPoint point2;
-   if (screen_width > screen_height) {
-        point2.x = screen_height - 1 - point.y;
-        point2.y = point.x;
-        // iPad 1 is rotated the other way
-        if (is_iPad1){
-            point2.x = screen_height - 1 - point2.x;
-            point2.y = screen_width  - 1 - point2.y;
+   if (is_iPad1){
+        // framebuffer is landscape, with home on the right side
+        point2.x = point.y;
+        point2.y = screen_width - 1 - point.x;    
+   } else {
+        // other iPads
+       if (screen_width > screen_height) {
+            point2.x = screen_height - 1 - point.y;
+            point2.y = point.x;
+        } else {
+            point2.x = point.x;
+            point2.y = point.y;
         }
-    } else {
-        point2.x = point.x;
-        point2.y = point.y;
     }
     point2.x *= retina_factor;
     point2.y *= retina_factor;
@@ -215,7 +217,7 @@ static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
         if (displays != nil && [displays count] != 0){
             if (CAWindowServerDisplay *display = [displays objectAtIndex:0]) { 
                 port = [display clientPortAtPosition:point2];
-                // NSLog(@"display port : %x at %f/%f", (int) port, point2.x, point2.y);
+                NSLog(@"hid-support: display port : %x at %f/%f (%f/%f)", (int) port, point2.x, point2.y, point.x, point.y);
             }
         }
     }
