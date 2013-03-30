@@ -217,7 +217,7 @@ static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
         if (displays != nil && [displays count] != 0){
             if (CAWindowServerDisplay *display = [displays objectAtIndex:0]) { 
                 port = [display clientPortAtPosition:point2];
-                NSLog(@"hid-support: display port : %x at %f/%f (%f/%f)", (int) port, point2.x, point2.y, point.x, point.y);
+                // NSLog(@"hid-support: display port : %x at %f/%f (%f/%f)", (int) port, point2.x, point2.y, point.x, point.y);
             }
         }
     }
