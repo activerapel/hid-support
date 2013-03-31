@@ -1,9 +1,9 @@
+export ARCHS=armv6
+
+THEOS_PACKAGE_DIR_NAME=debs
+
 include $(THEOS)/makefiles/common.mk
 
-export ARCH=armv6
-SUBPROJECTS = libhidsupport  hidspringboard
-
-SUBPROJECTS += hidlowtide
-# SUBPROJECTS += hidsupporttest
+SUBPROJECTS = libhidsupport hidspringboard hidlowtide
 
 include $(FW_MAKEDIR)/aggregate.mk
