@@ -128,6 +128,7 @@ static int Level_;  // 0 = < 3.0, 1 = 3.0-3.1.x, 2 = 3.2-4.3.3, 3 = 5.0-5.1.1, 4
 
 // iPad support
 static int is_iPad1 = 0;
+static int is_iPad2 = 0;
 
 template <typename Type_>
 static void dlset(Type_ &function, const char *name) {
@@ -199,8 +200,12 @@ static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
         // framebuffer is landscape, with home on the right side
         point2.x = point.y;
         point2.y = screen_width - 1 - point.x;    
+   } else if (is_iPad2) {
+        // framebuffer is portrait
+        point2.x = screen_height - 1 - point.y;
+        point2.y = point.x;
    } else {
-        // other iPads
+        // other iPads (iPad3, iPad mini)
        if (screen_width > screen_height) {
             point2.x = screen_height - 1 - point.y;
             point2.y = point.x;
@@ -580,12 +585,16 @@ static void init_graphicsservices(void){
     dlset($GSMainScreenScaleFactor, "GSMainScreenScaleFactor");
 }
 
-static void detect_first_generation_iPad(void){
+static void detect_iPads(void){
     size_t size;
     sysctlbyname("hw.machine", NULL, &size, NULL, 0);
     char machine[size];
     sysctlbyname("hw.machine", machine, &size, NULL, 0);
     is_iPad1 = strcmp(machine, "iPad1,1") == 0;
+    is_iPad2 = strcmp(machine, "iPad2,1") == 0;
+    is_iPad2 = is_iPad2 || strcmp(machine, "iPad2,2") == 0;
+    is_iPad2 = is_iPad2 || strcmp(machine, "iPad2,3") == 0;
+    is_iPad2 = is_iPad2 || strcmp(machine, "iPad2,4") == 0;
 }
 
 %group SpringBoardHooks
@@ -610,14 +619,15 @@ static void detect_first_generation_iPad(void){
     mouse_max_x = screen_width - 1;
     mouse_max_y = screen_height - 1;
     
-    detect_first_generation_iPad();
 
     // handle retina devices (checks for iOS4.x)
     if ([[UIScreen mainScreen] respondsToSelector:@selector(displayLinkWithTarget:selector:)]){
         retina_factor = [UIScreen mainScreen].scale;
     }
 
-    NSLog(@"hid-support (SpringBoard): screen size: %f x %f, retina %f, is_iPad1 %u", screen_width, screen_height, retina_factor, is_iPad1);
+    detect_iPads();
+
+    NSLog(@"hid-support (SpringBoard): screen size: %f x %f, retina %f, is_iPad1 %u, is_iPad2 %u", screen_width, screen_height, retina_factor, is_iPad1, is_iPad2);
 }
 %end
 %end
@@ -641,11 +651,9 @@ static void init_backboardd(void){
     mouse_max_x = screen_width - 1;
     mouse_max_y = screen_height - 1;
     
-    // detect iPad - UIKit does the same
-    // iPad has rotated framebuffer
-    detect_first_generation_iPad();
+    detect_iPads();
 
-    NSLog(@"hid-support (backboardd): screen size: %f x %f, retina %f, is_iPad1 %u", screen_width, screen_height, retina_factor, is_iPad1);
+    NSLog(@"hid-support (SpringBoard): screen size: %f x %f, retina %f, is_iPad1 %u, is_iPad2 %u", screen_width, screen_height, retina_factor, is_iPad1, is_iPad2);
 }
 
 %ctor{
