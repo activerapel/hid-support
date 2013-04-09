@@ -88,6 +88,21 @@
 		</dict>
 		
 		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>label</key>
+			<string>Scroll direction: natural</string>
+			<key>default</key>
+			<true/>
+			<key>key</key>
+			<string>scrollNatural</string>
+			<key>defaults</key>
+			<string>ch.ringwald.btc-mouse</string>
+			<key>PostNotification</key>
+			<string>ch.ringwald.btc-mouse.settings</string>
+		</dict>
+
+		<dict>
 			<key>bundle</key>
 			<string>AppList</string>
 			<key>cell</key>
