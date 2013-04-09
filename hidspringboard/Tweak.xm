@@ -105,14 +105,16 @@ void        (*$GSEventSetKeyCode)(GSEventRef event, uint16_t keyCode);
 mach_port_t (*GSTakePurpleSystemEventPort)(void);
 CGSize      (*$GSMainScreenSize)(void);
 float       (*$GSMainScreenScaleFactor)(void);
+int         (*$GSMainScreenOrientation)(void);
 
 // GSEvent being sent
 static uint8_t  touchEvent[sizeof(GSEventRecord) + sizeof(GSHandInfo) + sizeof(GSPathInfo)];
 
-// Screen dimension
-static float screen_width = 0;
-static float screen_height = 0;
+// Screen dimension - fallback for very old iOS versions
+static float screen_width = 320;
+static float screen_height = 480;
 static float retina_factor = 1.0f;
+static int   screen_orientation = 1;
 
 // Mouse area (might be rotated)
 static float mouse_max_x = 0;
@@ -171,11 +173,14 @@ static float box(float min, float value, float max){
 }
 
 static bool isSBUserNotificationAlertVisible(void){
-    UIView * keyWindow = [[UIApplication sharedApplication] keyWindow];
+    if (!%c(UIApplication)) return NO;
+    if (!%c(UIAlertView)) return NO;
+
+    UIView * keyWindow = [[%c(UIApplication) sharedApplication] keyWindow];
     if (!keyWindow) return false;
     if (![keyWindow.subviews count]) return false;
     UIView * firstSubview = [keyWindow.subviews objectAtIndex:0];
-    return [firstSubview isKindOfClass:[UIAlertView class]];
+    return [firstSubview isKindOfClass:[%c(UIAlertView) class]];
 }
 
 static void sendGSEventToSpringBoard(GSEventRecord *eventRecord){
@@ -478,14 +483,17 @@ static void handleButtonEvent(const button_event_t *button_event){
 
 static void keepAwake(void){
 
+    if (!%c(UIApplication)) return;
+
     bool wasDimmed = [[%c(SBAwayController) sharedAwayController] isDimmed ];
     bool wasLocked = [[%c(SBAwayController) sharedAwayController] isLocked ];
-    
+
     // prevent dimming
-    [(SpringBoard *) [UIApplication sharedApplication] resetIdleTimerAndUndim:true];
+    [(SpringBoard *) [%c(UIApplication) sharedApplication] resetIdleTimerAndUndim:true];
     
-    // handle user unlock
-    if ( wasDimmed || wasLocked ){
+    // handle user unlock if it was locked and dimmed before
+    // note: don't call attemptUnlock if it was undimmed as that resets the passcode
+    if ( wasDimmed && wasLocked ){
         [[%c(SBAwayController) sharedAwayController] attemptUnlock];
         [[%c(SBAwayController) sharedAwayController] unlockWithSound:NO];
     }
@@ -597,73 +605,36 @@ static void detect_iPads(void){
     is_iPad2 = is_iPad2 || strcmp(machine, "iPad2,4") == 0;
 }
 
-%group SpringBoardHooks
-%hook SpringBoard
--(void)applicationDidFinishLaunching:(id)fp8 {
+%ctor{
 
-    %orig;
+    %init();
 
     init_graphicsservices();
     detectOSLevel();
+    detect_first_generation_iPad();
 
-    // Setup a mach port for receiving mouse events from outside of SpringBoard
-    CFMessagePortRef local = CFMessagePortCreateLocal(NULL, CFSTR(HID_SUPPORT_PORT_NAME), myCallBack, NULL, false);
-    CFRunLoopSourceRef source = CFMessagePortCreateRunLoopSource(NULL, local, 0);
-    CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
-
-    // Get initial screen size
-    // FIXME: Consider adding support for TVOut* users
-    CGRect rect = [[UIScreen mainScreen] bounds];
-    screen_width = rect.size.width;
-    screen_height = rect.size.height;
-    mouse_max_x = screen_width - 1;
-    mouse_max_y = screen_height - 1;
-    
-
-    // handle retina devices (checks for iOS4.x)
-    if ([[UIScreen mainScreen] respondsToSelector:@selector(displayLinkWithTarget:selector:)]){
-        retina_factor = [UIScreen mainScreen].scale;
+    // Get main screen size and retina factor
+    if ($GSMainScreenScaleFactor) {
+        retina_factor = $GSMainScreenScaleFactor();
+    }
+    if ($GSMainScreenSize){
+        CGSize screenSize = $GSMainScreenSize();
+        screen_width = screenSize.width / retina_factor;
+        screen_height = screenSize.height / retina_factor;
+    }
+    if ($GSMainScreenOrientation()){
+        screen_orientation = $GSMainScreenOrientation();
     }
 
-    detect_iPads();
-
-    NSLog(@"hid-support (SpringBoard): screen size: %f x %f, retina %f, is_iPad1 %u, is_iPad2 %u", screen_width, screen_height, retina_factor, is_iPad1, is_iPad2);
-}
-%end
-%end
-
-static void init_backboardd(void){
-
-    init_graphicsservices();
-    detectOSLevel();
+    // current mouse bounds
+    mouse_max_x = screen_width - 1;
+    mouse_max_y = screen_height - 1;
 
     // Setup a mach port for receiving events from outside of backboardd
     CFMessagePortRef local = CFMessagePortCreateLocal(NULL, CFSTR(HID_SUPPORT_PORT_NAME_BB), myCallBack, NULL, false);
     CFRunLoopSourceRef source = CFMessagePortCreateRunLoopSource(NULL, local, 0);
     CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
-
-    // Get main screen size
-    // FIXME: Consider adding support for TVOut* users
-    CGSize screenSize = $GSMainScreenSize();
-    float  retina_factor = $GSMainScreenScaleFactor();
-    screen_width = screenSize.width / retina_factor;
-    screen_height = screenSize.height / retina_factor;
-    mouse_max_x = screen_width - 1;
-    mouse_max_y = screen_height - 1;
     
-    detect_iPads();
-
-    NSLog(@"hid-support (SpringBoard): screen size: %f x %f, retina %f, is_iPad1 %u, is_iPad2 %u", screen_width, screen_height, retina_factor, is_iPad1, is_iPad2);
-}
-
-%ctor{
-
-    %init();
-
-    Class springboard = %c(SpringBoard);
-    if (springboard) {
-        %init(SpringBoardHooks);
-    } else {
-        init_backboardd();
-    }
+    NSLog(@"hid-support: screen size: %f x %f, retina %f, orientation %u, iPad1 %u",
+        screen_width, screen_height, retina_factor, screen_orientation, is_iPad1);
 }

@@ -1,7 +1,7 @@
 Package: ch.ringwald.hidsupport
 Name: hid-support
 Depends: mobilesubstrate
-Version: 0.8
+Version: 0.9
 Architecture: iphoneos-arm
 Description: Support for Human Interface Devices on iOS and new Apple TV
 Homepage: http://code.google.com/p/hid-support/
