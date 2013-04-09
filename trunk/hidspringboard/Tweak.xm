@@ -611,7 +611,7 @@ static void detect_iPads(void){
 
     init_graphicsservices();
     detectOSLevel();
-    detect_first_generation_iPad();
+    detect_iPads();
 
     // Get main screen size and retina factor
     if ($GSMainScreenScaleFactor) {
