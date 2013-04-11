@@ -114,7 +114,7 @@ static uint8_t  touchEvent[sizeof(GSEventRecord) + sizeof(GSHandInfo) + sizeof(G
 static float screen_width = 320;
 static float screen_height = 480;
 static float retina_factor = 1.0f;
-static float screen_orientation = 1;
+static float screen_orientation = 0.0f;
 
 // Mouse area (might be rotated)
 static float mouse_max_x = 0;
@@ -558,7 +558,7 @@ void initialize(void){
     if (is_iPad1){
         // framebuffer is landscape, with home on the right side
         screen_rotation = MODE_A;
-    } else if (screen_orientation == 1.0f || screen_orientation == 0.0f) {
+    } else if (screen_orientation == 0.0f) {
         // framebuffer is portrait, with home on bottom (my maths tells me )
         screen_rotation = PORTRAIT;
     } else {
