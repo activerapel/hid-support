@@ -105,7 +105,7 @@ void        (*$GSEventSetKeyCode)(GSEventRef event, uint16_t keyCode);
 mach_port_t (*GSTakePurpleSystemEventPort)(void);
 CGSize      (*$GSMainScreenSize)(void);
 float       (*$GSMainScreenScaleFactor)(void);
-int         (*$GSMainScreenOrientation)(void);
+float         (*$GSMainScreenOrientation)(void);
 
 // GSEvent being sent
 static uint8_t  touchEvent[sizeof(GSEventRecord) + sizeof(GSHandInfo) + sizeof(GSPathInfo)];
@@ -114,7 +114,7 @@ static uint8_t  touchEvent[sizeof(GSEventRecord) + sizeof(GSHandInfo) + sizeof(G
 static float screen_width = 320;
 static float screen_height = 480;
 static float retina_factor = 1.0f;
-static int   screen_orientation = 1;
+static float screen_orientation = 1;
 
 // Mouse area (might be rotated)
 static float mouse_max_x = 0;
@@ -130,7 +130,8 @@ static int Level_;  // 0 = < 3.0, 1 = 3.0-3.1.x, 2 = 3.2-4.3.3, 3 = 5.0-5.1.1, 4
 
 // iPad support
 static int is_iPad1 = 0;
-static int is_iPad2 = 0;
+
+static enum { PORTRAIT, MODE_A, MODE_B } screen_rotation = PORTRAIT;
 
 template <typename Type_>
 static void dlset(Type_ &function, const char *name) {
@@ -197,28 +198,27 @@ static void sendGSEventToSpringBoard(GSEventRecord *eventRecord){
 static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
 
     mach_port_t port(0);
-
     mach_port_t purple(0);
-    
-   CGPoint point2;
-   if (is_iPad1){
-        // framebuffer is landscape, with home on the right side
-        point2.x = point.y;
-        point2.y = screen_width - 1 - point.x;    
-   } else if (is_iPad2) {
-        // framebuffer is portrait
-        point2.x = screen_height - 1 - point.y;
-        point2.y = point.x;
-   } else {
-        // other iPads (iPad3, iPad mini)
-       if (screen_width > screen_height) {
-            point2.x = screen_height - 1 - point.y;
-            point2.y = point.x;
-        } else {
+    CGPoint point2;
+
+    switch (screen_rotation){
+        case PORTRAIT:
+            // framebuffer is portrait 
             point2.x = point.x;
             point2.y = point.y;
-        }
+            break;
+        case MODE_A:
+            // framebuffer is landscape, with home on the right side
+            point2.x = point.y;
+            point2.y = screen_width - 1 - point.x;    
+            break;
+        case MODE_B:
+            // framebuffer is landscape, with home on the left side
+            point2.x = screen_height - 1 - point.y;
+            point2.y = point.x;
+            break;
     }
+
     point2.x *= retina_factor;
     point2.y *= retina_factor;
 
@@ -499,9 +499,81 @@ static void keepAwake(void){
     }
 }
 
+static void init_graphicsservices(void){
+
+    // GraphicsServices used
+    MyMSHookSymbol(GSTakePurpleSystemEventPort, "GSGetPurpleSystemEventPort");
+    if (GSTakePurpleSystemEventPort == NULL) {
+        MyMSHookSymbol(GSTakePurpleSystemEventPort, "GSCopyPurpleSystemEventPort");
+        PurpleAllocated = true;
+    }
+    dlset($GSEventCreateKeyEvent, "GSEventCreateKeyEvent");
+    dlset($GSCreateSyntheticKeyEvent, "_GSCreateSyntheticKeyEvent");
+    dlset($GSEventSetKeyCode, "GSEventSetKeyCode");
+    dlset($GSMainScreenSize, "GSMainScreenSize");
+    dlset($GSMainScreenScaleFactor, "GSMainScreenScaleFactor");
+    dlset($GSMainScreenOrientation, "GSMainScreenOrientation");
+}
+
+static void detect_iPads(void){
+    size_t size;
+    sysctlbyname("hw.machine", NULL, &size, NULL, 0);
+    char machine[size];
+    sysctlbyname("hw.machine", machine, &size, NULL, 0);
+    is_iPad1 = strcmp(machine, "iPad1,1") == 0;
+}
+
+void initialize(void){
+
+    init_graphicsservices();
+    detectOSLevel();
+    detect_iPads();
+
+    // Get main screen size and retina factor
+    if ($GSMainScreenScaleFactor) {
+        retina_factor = $GSMainScreenScaleFactor();
+    }
+    if ($GSMainScreenSize){
+        CGSize screenSize = $GSMainScreenSize();
+        screen_width = screenSize.width / retina_factor;
+        screen_height = screenSize.height / retina_factor;
+    }
+    if ($GSMainScreenOrientation()){
+        screen_orientation = $GSMainScreenOrientation();
+    }
+
+    // current mouse bounds
+    mouse_max_x = screen_width - 1;
+    mouse_max_y = screen_height - 1;
+
+    NSLog(@"hid-support: screen size: %f x %f, retina %f, orientation %f, iPad1 %u",
+        screen_width, screen_height, retina_factor, screen_orientation, is_iPad1);
+
+    // orientation values
+    // iPad 2:   768 x 1024  - 4.7123889923095703
+    // iPad 3:   768 x 1024  - 4.7123889923095703
+    // iPhone 5: 320 x 586   - 1.000000
+    // iPad Mini: 768 x 1024 - 1.000000
+
+    if (is_iPad1){
+        // framebuffer is landscape, with home on the right side
+        screen_rotation = MODE_A;
+    } else if (screen_orientation == 1.0f || screen_orientation == 0.0f) {
+        // framebuffer is portrait, with home on bottom (my maths tells me )
+        screen_rotation = PORTRAIT;
+    } else {
+        screen_rotation = MODE_B;
+    }
+
+}
+
 static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfData, void *info) {
 
-    // NSLog(@"hidsupport callback, msg %u", msgid);
+    static BOOL initialized = NO;
+    if (!initialized) {
+        initialize();
+        initialized = true;
+    }
     
     const char *data = (const char *) CFDataGetBytePtr(cfData);
     uint16_t dataLen = CFDataGetLength(cfData);
@@ -510,10 +582,6 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
     unsigned int i;
     // have pointers ready
     key_event_t     * key_event;
-    // remote_action_t * remote_action;
-    // unichar           theChar;
-    // touch_event_t   * touch_event;
-    // accelerometer_t * acceleometer;
     dimension_t dimension_result;
     CFDataRef returnData = NULL;
     CGPoint location;
@@ -578,63 +646,18 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
     return returnData;  // as stated in header, both data and returnData will be released for us after callback returns
 }
 
-static void init_graphicsservices(void){
-
-    // GraphicsServices used
-    MyMSHookSymbol(GSTakePurpleSystemEventPort, "GSGetPurpleSystemEventPort");
-    if (GSTakePurpleSystemEventPort == NULL) {
-        MyMSHookSymbol(GSTakePurpleSystemEventPort, "GSCopyPurpleSystemEventPort");
-        PurpleAllocated = true;
-    }
-    dlset($GSEventCreateKeyEvent, "GSEventCreateKeyEvent");
-    dlset($GSCreateSyntheticKeyEvent, "_GSCreateSyntheticKeyEvent");
-    dlset($GSEventSetKeyCode, "GSEventSetKeyCode");
-    dlset($GSMainScreenSize, "GSMainScreenSize");
-    dlset($GSMainScreenScaleFactor, "GSMainScreenScaleFactor");
-}
-
-static void detect_iPads(void){
-    size_t size;
-    sysctlbyname("hw.machine", NULL, &size, NULL, 0);
-    char machine[size];
-    sysctlbyname("hw.machine", machine, &size, NULL, 0);
-    is_iPad1 = strcmp(machine, "iPad1,1") == 0;
-    is_iPad2 = strcmp(machine, "iPad2,1") == 0;
-    is_iPad2 = is_iPad2 || strcmp(machine, "iPad2,2") == 0;
-    is_iPad2 = is_iPad2 || strcmp(machine, "iPad2,3") == 0;
-    is_iPad2 = is_iPad2 || strcmp(machine, "iPad2,4") == 0;
-}
-
 %ctor{
 
     %init();
 
-    init_graphicsservices();
-    detectOSLevel();
-    detect_iPads();
-
-    // Get main screen size and retina factor
-    if ($GSMainScreenScaleFactor) {
-        retina_factor = $GSMainScreenScaleFactor();
+    // Setup a mach port for receiving events from outside
+    CFStringRef portName = nil;
+    if (%c(SpringBoard)) {
+        portName = CFSTR(HID_SUPPORT_PORT_NAME);
+    } else {
+        portName = CFSTR(HID_SUPPORT_PORT_NAME_BB);
     }
-    if ($GSMainScreenSize){
-        CGSize screenSize = $GSMainScreenSize();
-        screen_width = screenSize.width / retina_factor;
-        screen_height = screenSize.height / retina_factor;
-    }
-    if ($GSMainScreenOrientation()){
-        screen_orientation = $GSMainScreenOrientation();
-    }
-
-    // current mouse bounds
-    mouse_max_x = screen_width - 1;
-    mouse_max_y = screen_height - 1;
-
-    // Setup a mach port for receiving events from outside of backboardd
-    CFMessagePortRef local = CFMessagePortCreateLocal(NULL, CFSTR(HID_SUPPORT_PORT_NAME_BB), myCallBack, NULL, false);
+    CFMessagePortRef local = CFMessagePortCreateLocal(NULL, portName, myCallBack, NULL, false);
     CFRunLoopSourceRef source = CFMessagePortCreateRunLoopSource(NULL, local, 0);
     CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
-    
-    NSLog(@"hid-support: screen size: %f x %f, retina %f, orientation %u, iPad1 %u",
-        screen_width, screen_height, retina_factor, screen_orientation, is_iPad1);
 }
