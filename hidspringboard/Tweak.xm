@@ -538,7 +538,7 @@ void initialize(void){
         screen_width = screenSize.width / retina_factor;
         screen_height = screenSize.height / retina_factor;
     }
-    if ($GSMainScreenOrientation()){
+    if ($GSMainScreenOrientation){
         screen_orientation = $GSMainScreenOrientation();
     }
 
