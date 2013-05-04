@@ -676,7 +676,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 %new(v@:{CGPoint=ff}i)
 - (void)handleMouseEventAtPoint:(CGPoint)point buttons:(int)buttons
 {
-    // NSLog(@"handleMouseEventAtPoint %f andY %f", point.x, point.y);
+    // NSLog(@"handleMouseEventAtPoint %f/%f, buttons %u (click %u, home %u)", point.x, point.y, buttons, buttonClick, buttonHome);
 
     // NOTE: Must store button state for comparision, port for
     //       mouse dragging and button up
@@ -736,7 +736,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
                 return;
             }
         }
-        hid_inject_mouse_abs_move(buttons & 1, point.x, point.y);
+        hid_inject_mouse_abs_move(buttons & buttonClick ? 1 : 0, point.x, point.y);
     }
 }
 
