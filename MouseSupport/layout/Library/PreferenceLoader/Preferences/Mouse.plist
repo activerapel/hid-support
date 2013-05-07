@@ -69,14 +69,44 @@
 			<key>label</key>
 			<string>BTC Mouse &amp; Trackpad</string>
 			<key>footerText</key>
-			<string>'Presentation mode' and 'Two finger tap' only work with BTC Mouse &amp; Trackpad.</string>
+			<string>Options in this section are only available with BTC Mouse &amp; Trackpad.</string>
 		</dict>
 
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>label</key>
-			<string>Disable scrollwheel</string>
+			<string>Scroll direction: natural</string>
+			<key>default</key>
+			<true/>
+			<key>key</key>
+			<string>scrollNatural</string>
+			<key>defaults</key>
+			<string>ch.ringwald.btc-mouse</string>
+			<key>PostNotification</key>
+			<string>ch.ringwald.btc-mouse.settings</string>
+		</dict>
+
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>label</key>
+			<string>Scroll wheel as zoom</string>
+			<key>default</key>
+			<false/>
+			<key>key</key>
+			<string>scrollWheelZoom</string>
+			<key>defaults</key>
+			<string>ch.ringwald.btc-mouse</string>
+			<key>PostNotification</key>
+			<string>ch.ringwald.btc-mouse.settings</string>
+		</dict>
+
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>label</key>
+			<string>Disable scroll wheel</string>
 			<key>default</key>
 			<false/>
 			<key>key</key>
@@ -91,11 +121,11 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>label</key>
-			<string>Scroll direction: natural</string>
+			<string>Disable key repeat</string>
 			<key>default</key>
-			<true/>
+			<false/>
 			<key>key</key>
-			<string>scrollNatural</string>
+			<string>disableKeyRepeat</string>
 			<key>defaults</key>
 			<string>ch.ringwald.btc-mouse</string>
 			<key>PostNotification</key>
