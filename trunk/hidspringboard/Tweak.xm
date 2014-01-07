@@ -14,6 +14,8 @@
 #include <mach/mach_init.h>
 #include <sys/sysctl.h>
 
+#include <UIKit/UIKit.h>
+
 // kenytm
 #import <GraphicsServices/GSEvent.h>
 
@@ -336,7 +338,7 @@ static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
     if (Level_ >= 2 && unicode >= 0xf700){
         for (int i = 0; i < specialMapppingCount ; i ++){
             if (specialMapping[i].specialFunction == unicode){
-                NSLog(@"Mapping 0x%04x -> 0x%02x/0x02x", unicode, specialMapping[i].charCode, specialMapping[i].keyCode);
+                NSLog(@"Mapping 0x%04x -> 0x%02x/0x%02x", unicode, specialMapping[i].charCode, specialMapping[i].keyCode);
                 unicode   = specialMapping[i].charCode;
                 keycode   = specialMapping[i].keyCode;
                 modifier |= specialMapping[i].modifier;
@@ -364,7 +366,7 @@ static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
         // NSLog(@"GSEventCreateKeyEvent type %u for %@ with flags %08x", type, modifier, string, flags); 
         string = CFStringCreateWithCharacters(kCFAllocatorDefault, &unicode, 1);
         event = (*$GSEventCreateKeyEvent)(type, location, string, string, (GSEventFlags) flags, 0, 0, 1);
-        (*GSEventSetKeyCode)(event, keycode);
+        (*$GSEventSetKeyCode)(event, keycode);
         
     } else if ($GSCreateSyntheticKeyEvent && down) { // < 3.2 - no up events
         // NSLog(@"GSCreateSyntheticKeyEvent down %u for %C", down, unicode);
@@ -640,7 +642,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
             break;
         
         default:
-            NSLog(@"HID_SUPPORT_PORT_NAME server, msgid %u not supported", msgid);
+            NSLog(@"HID_SUPPORT_PORT_NAME server, msgid %d not supported", (int) msgid);
             break;
     }
     return returnData;  // as stated in header, both data and returnData will be released for us after callback returns
@@ -657,7 +659,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
     } else {
         portName = CFSTR(HID_SUPPORT_PORT_NAME_BB);
     }
-    CFMessagePortRef local = CFMessagePortCreateLocal(NULL, portName, myCallBack, NULL, false);
+    CFMessagePortRef local = CFMessagePortCreateLocal(NULL, portName, myCallBack, NULL, NULL);
     CFRunLoopSourceRef source = CFMessagePortCreateRunLoopSource(NULL, local, 0);
     CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
 }

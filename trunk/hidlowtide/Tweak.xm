@@ -200,7 +200,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
             break;
             
         default:
-            NSLog(@"HID_SUPPORT_PORT_NAME server, msgid %u not supported", msgid);
+            NSLog(@"HID_SUPPORT_PORT_NAME server, msgid %d not supported", (int) msgid);
     }
     return NULL;  // as stated in header, both data and returnData will be released for us after callback returns
 }
@@ -215,7 +215,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 %hook LTAppDelegate
 -(void)applicationDidFinishLaunching:(id)fp8 {
 NSAutoreleasePool * pool = [[NSAutoreleasePool alloc] init];
-    CFMessagePortRef local = CFMessagePortCreateLocal(NULL, CFSTR(HID_SUPPORT_PORT_NAME), myCallBack, NULL, false);
+    CFMessagePortRef local = CFMessagePortCreateLocal(NULL, CFSTR(HID_SUPPORT_PORT_NAME), myCallBack, NULL, NULL);
     CFRunLoopSourceRef source = CFMessagePortCreateRunLoopSource(NULL, local, 0);
     CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopDefaultMode);
     [pool release]; 
