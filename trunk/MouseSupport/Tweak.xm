@@ -713,21 +713,19 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     }
 
     if ((diff & buttonHome) != 0) {
-        // Simulate Home button press
-        struct GSEventRecord record;
-        memset(&record, 0, sizeof(record));
-        record.type = (buttons & buttonHome) != 0 ? kGSEventMenuButtonDown : kGSEventMenuButtonUp;
-        record.timestamp = GSCurrentEventTimestamp();
-        GSSendSystemEvent(&record);
+        if (buttons & buttonHome){
+            hid_inject_button_down(HWButtonHome);
+         } else {
+            hid_inject_button_up(HWButtonHome);
+        }
     }
 
     if ((diff & buttonLock) != 0) {
-        // Simulate Sleep/Wake button press
-        struct GSEventRecord record;
-        memset(&record, 0, sizeof(record));
-        record.type = (buttons & buttonLock) != 0 ? kGSEventLockButtonDown : kGSEventLockButtonUp;
-        record.timestamp = GSCurrentEventTimestamp();
-        GSSendSystemEvent(&record);
+        if (buttons & buttonLock){
+            hid_inject_button_down(HWButtonLock);
+         } else {
+            hid_inject_button_up(HWButtonLock);
+        }
     }
     
     if (twas != tis || tis) {
