@@ -48,10 +48,12 @@
 
 #include "substrate.h"
 
+#import <UIKit/UIKit.h>
 #import <GraphicsServices/GSEvent.h>
 #import <QuartzCore/QuartzCore.h>
 #include <mach/mach_port.h>
 #include <mach/mach_init.h>
+#include <dlfcn.h>
 
 #include "hid-support.h"
 
@@ -226,10 +228,11 @@ mach_port_t (*GSTakePurpleSystemEventPort)(void);
 //==============================================================================
 
 // NOTE: Swiped from Jay Freeman (saurik)'s Veency
-template <typename Type_>
 
 //==============================================================================
 
+#ifndef __LP64__
+template <typename Type_>
 static inline void lookupSymbol(const char *libraryFilePath, const char *symbolName, Type_ &function)
 {
     // Lookup the function
@@ -245,10 +248,11 @@ static inline void lookupSymbol(const char *libraryFilePath, const char *symbolN
 
     function = reinterpret_cast<Type_>(value);
 }
+#endif
 
-template <typename Type_>
-static inline void MyMSHookSymbol(Type_ *&value, const char *name, void *handle = RTLD_DEFAULT) {
-    value = reinterpret_cast<Type_ *>(dlsym(handle, name));
+template <typename Type2>
+static inline void MyMSHookSymbol(Type2 *&value, const char *name, void *handle = RTLD_DEFAULT) {
+    value = reinterpret_cast<Type2 *>(dlsym(handle, name));
 }
 
 //==============================================================================
@@ -423,7 +427,7 @@ static CFDataRef mouseCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef c
             }
         }
     } else {
-        NSLog(@"Mouse: Unknown message type: %x", msgid); 
+        NSLog(@"Mouse: Unknown message type: %x", (int) msgid); 
     }
 
     // Do not return a reply to the caller
@@ -539,6 +543,8 @@ BOOL handleNotificationCenterGestures(CGPoint point, int button){
 
 // END NOTIFICATION CENTER CODE
 
+#ifndef __LP64__
+
 #define QuartzCore "/System/Library/Frameworks/QuartzCore.framework/QuartzCore"
 // NOTE: The mouse pointer image interferes with hit tests as the pointer
 //       covers the point being clicked. To work around this, make hit tests
@@ -554,6 +560,7 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 {
     return (context == mouseRenderContext) ? NULL : __ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj(context, point, unknown);
 }
+#endif
 
 %hook SpringBoard
 
@@ -948,6 +955,7 @@ static void orientationUpdateListener(CFNotificationCenterRef center, void *obse
             0);
     }
 
+#ifndef __LP64__
     // only makes sense before iOS 6 - later, CARenderServer is part of backboardd now
     if (!is_60_or_higher){
         void * (*_ZN2CA6Render7Context8hit_testE7CGPointj)(Context *, CGPoint, unsigned int);
@@ -964,6 +972,7 @@ static void orientationUpdateListener(CFNotificationCenterRef center, void *obse
             cloakingSupport = YES;
         }
     }
+#endif
 
     // NSLog(@"MouseSupport loaded");
     
