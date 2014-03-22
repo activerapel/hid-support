@@ -14,7 +14,12 @@
 #include <mach/mach_init.h>
 #include <sys/sysctl.h>
 
+#include <mach/mach_time.h>
 #include <UIKit/UIKit.h>
+
+#include <IOKit/hid/IOHIDEvent.h>
+#include <IOKit/hid/IOHIDEventSystemClient.h>
+#include "RocketBootstrap.h"
 
 // kenytm
 #import <GraphicsServices/GSEvent.h>
@@ -27,16 +32,26 @@ static inline void MyMSHookSymbol(Type_ *&value, const char *name, void *handle 
     value = reinterpret_cast<Type_ *>(dlsym(handle, name));
 }
 
-extern "C" uint64_t GSCurrentEventTimestamp(void);
+extern "C" uint64_t   GSCurrentEventTimestamp(void);
 extern "C" GSEventRef _GSCreateSyntheticKeyEvent(UniChar key, BOOL up, BOOL repeating);
 
 // used interface from CAWindowServer & CAWindowServerDisplay
 @interface CAWindowServer : NSObject
-+ (id)serverIfRunning;
-- (id)displays;
++ (CAWindowServer *)serverIfRunning;
+- (NSArray *)displays;
 @end
 @interface CAWindowServerDisplay : NSObject
-- (unsigned int)clientPortAtPosition:(struct CGPoint)fp8;
+- (unsigned int)clientPortAtPosition:(struct CGPoint)position;
+- (int) contextIdAtPosition:(CGPoint)position;
+- (mach_port_t) taskPortOfContextId:(int)context;
+@end
+
+@interface BKHIDClientConnectionManager : NSObject
+- (IOHIDEventSystemConnectionRef) clientForTaskPort:(mach_port_t)port;
+@end
+
+@interface BKAccessibility : NSObject
++ (BKHIDClientConnectionManager *) _eventRoutingClientConnectionManager;
 @end
 
 #if !defined(__IPHONE_3_2) || __IPHONE_3_2 > __IPHONE_OS_VERSION_MAX_ALLOWED
@@ -53,9 +68,11 @@ typedef enum {
 @property(nonatomic,readonly) CGFloat scale;
 @end
 
-// unlock && undim on 3.0 & 3.1
 @interface SpringBoard : NSObject
-- (void)resetIdleTimerAndUndim:(BOOL)fp8;
+// unlock && undim on 3.0 & 3.1 - 6.x
+-(void)resetIdleTimerAndUndim:(BOOL)fp8; 
+// iOS 7+
+-(void)resetIdleTimerAndUndim;
 // frontmost app port on 6.0+
 -(unsigned)_frontmostApplicationPort;
 @end
@@ -88,6 +105,12 @@ typedef enum {
 - (void)toggleMute;
 @end
 
+
+@interface UIKeyboardImpl : NSObject
++(UIKeyboardImpl*)sharedInstance;
+-(void)addInputString:(NSString*)string;
+@end
+
 // types for touches
 typedef enum __GSHandInfoType2 {
         kGSHandInfoType2TouchDown    = 1,    // first down
@@ -104,10 +127,11 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 GSEventRef  (*$GSEventCreateKeyEvent)(int, CGPoint, CFStringRef, CFStringRef, uint32_t, UniChar, short, short);
 GSEventRef  (*$GSCreateSyntheticKeyEvent)(UniChar, BOOL, BOOL);
 void        (*$GSEventSetKeyCode)(GSEventRef event, uint16_t keyCode);
-mach_port_t (*GSTakePurpleSystemEventPort)(void);
 CGSize      (*$GSMainScreenSize)(void);
 float       (*$GSMainScreenScaleFactor)(void);
-float         (*$GSMainScreenOrientation)(void);
+float       (*$GSMainScreenOrientation)(void);
+CFStringRef (*$GSEventCopyCharacters)(GSEventRef event);
+GSEventType (*$GSEventGetType)(GSEventRef event);
 
 // GSEvent being sent
 static uint8_t  touchEvent[sizeof(GSEventRecord) + sizeof(GSHandInfo) + sizeof(GSPathInfo)];
@@ -127,8 +151,7 @@ static float mouse_x = 0;
 static float mouse_y = 0;
 
 // access to system event server
-static bool PurpleAllocated;
-static int Level_;  // 0 = < 3.0, 1 = 3.0-3.1.x, 2 = 3.2-4.3.3, 3 = 5.0-5.1.1, 4 = 6.0+
+static int Level_;  // 0 = < 3.0, 1 = 3.0-3.1.x, 2 = 3.2-4.3.3, 3 = 5.0-5.1.1, 4 = 6.0-6.1.x, 5 = 7.0+ 
 
 // iPad support
 static int is_iPad1 = 0;
@@ -143,6 +166,11 @@ static void dlset(Type_ &function, const char *name) {
 
 // project GSEventRecord for OS < 3 if needed
 void detectOSLevel(){
+    if (kCFCoreFoundationVersionNumber > 800) { // iOS 7.x
+        Level_ = 5;
+        return;
+    }
+
     if (dlsym(RTLD_DEFAULT, "GSGetPurpleWorkspacePort")){
         Level_ = 4;
         return;
@@ -176,6 +204,7 @@ static float box(float min, float value, float max){
 }
 
 static bool isSBUserNotificationAlertVisible(void){
+
     if (!%c(UIApplication)) return NO;
     if (!%c(UIAlertView)) return NO;
 
@@ -186,21 +215,9 @@ static bool isSBUserNotificationAlertVisible(void){
     return [firstSubview isKindOfClass:[%c(UIAlertView) class]];
 }
 
-static void sendGSEventToSpringBoard(GSEventRecord *eventRecord){
-    mach_port_t purple(0);
-    purple = (*GSTakePurpleSystemEventPort)();
-    if (purple) {
-        GSSendEvent(eventRecord, purple);
-    }
-    if (purple && PurpleAllocated){
-        mach_port_deallocate(mach_task_self(), purple);
-    }
-}
-
 static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
 
     mach_port_t port(0);
-    mach_port_t purple(0);
     CGPoint point2;
 
     switch (screen_rotation){
@@ -235,21 +252,12 @@ static void sendGSEvent(GSEventRecord *eventRecord, CGPoint point){
     }
 
     // NSLog(@"display port : %x at %f/%f", (int) port, point2.x, point2.y);
-    
-    if (!port) {
-        if (!purple) {
-            purple = (*GSTakePurpleSystemEventPort)();
-        }
-        port = purple;
-    }
-    
+        
     if (port) {
         // FixRecord(eventRecord);
         GSSendEvent(eventRecord, port);
-    }
-    
-    if (purple && PurpleAllocated){
-        mach_port_deallocate(mach_task_self(), purple);
+    } else {
+        GSSendSystemEvent(eventRecord);
     }
 }
 
@@ -267,7 +275,7 @@ static GSHandInfoType getHandInfoType(int touch_before, int touch_now){
     return (GSHandInfoType) kGSHandInfoType2TouchFinal;
 }
 
-static void postMouseEvent(float x, float y, int click){
+static void postMouseEventGS(float x, float y, int click){
 
     static int prev_click = 0;
 
@@ -303,6 +311,52 @@ static void postMouseEvent(float x, float y, int click){
     sendGSEvent( (GSEventRecord*) event, location);  
     
     prev_click = click;  
+}
+
+static void postIOHIDEvent(IOHIDEventRef event){
+    static IOHIDEventSystemClientRef ioSystemClient = NULL;
+    if (!ioSystemClient){
+        ioSystemClient = IOHIDEventSystemClientCreate(kCFAllocatorDefault);
+        // NSLog(@"IOHIDEventSystemcClient %p", ioSystemClient);
+    }
+    IOHIDEventSystemClientDispatchEvent(ioSystemClient, event);
+    CFRelease(event);
+}
+
+static void postMouseEventIOHID(float x, float y, int click){
+
+    // NSLog(@"postMouseEventIOHID %f/%f down %u", x, y, click);
+
+    static int prev_click = 0;
+
+    uint32_t parent_flags;
+    uint32_t child_flags;
+    if (prev_click == 0 && click == 1) {
+        parent_flags = kIOHIDDigitizerEventRange | kIOHIDDigitizerEventTouch | kIOHIDDigitizerEventIdentity;
+        child_flags  = kIOHIDDigitizerEventRange | kIOHIDDigitizerEventTouch;
+    } else if (prev_click == 1 && click == 1) {
+        parent_flags = kIOHIDDigitizerEventPosition;
+        child_flags  = kIOHIDDigitizerEventPosition;
+    } else if (prev_click == 1 && click == 0) {
+        parent_flags = kIOHIDDigitizerEventRange | kIOHIDDigitizerEventTouch | kIOHIDDigitizerEventIdentity | kIOHIDDigitizerEventPosition;
+        child_flags  = kIOHIDDigitizerEventRange | kIOHIDDigitizerEventTouch;
+    } else return;
+    
+
+    IOHIDFloat xf = x / screen_width;
+    IOHIDFloat yf = y / screen_height;
+    IOHIDEventRef parent = IOHIDEventCreateDigitizerEvent(kCFAllocatorDefault, mach_absolute_time(), kIOHIDDigitizerTransducerTypeHand, 1<<22, 1, parent_flags, 0, xf, yf, 0, 0, 0, 0, 0, 0);
+    IOHIDEventSetIntegerValue(parent, kIOHIDEventFieldIsBuiltIn, true);
+    IOHIDEventSetIntegerValue(parent, kIOHIDEventFieldDigitizerIsDisplayIntegrated, true);
+    IOHIDEventSetSenderID(parent, 0x0123456789ABCDEF);
+
+    IOHIDEventRef child = IOHIDEventCreateDigitizerFingerEvent(kCFAllocatorDefault, mach_absolute_time(), 3, 2, child_flags, xf, yf, 0, 0, 0, click, click, 0);
+    IOHIDEventAppendEvent(parent, child);
+    CFRelease(child);
+    
+    postIOHIDEvent(parent);
+   
+    prev_click = click;
 }
 
 // handle special function keys (>= 0f700)
@@ -366,8 +420,9 @@ static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
         // NSLog(@"GSEventCreateKeyEvent type %u for %@ with flags %08x", type, modifier, string, flags); 
         string = CFStringCreateWithCharacters(kCFAllocatorDefault, &unicode, 1);
         event = (*$GSEventCreateKeyEvent)(type, location, string, string, (GSEventFlags) flags, 0, 0, 1);
-        (*$GSEventSetKeyCode)(event, keycode);
-        
+        if ($GSEventSetKeyCode) {
+            (*$GSEventSetKeyCode)(event, keycode);
+        }
     } else if ($GSCreateSyntheticKeyEvent && down) { // < 3.2 - no up events
         // NSLog(@"GSCreateSyntheticKeyEvent down %u for %C", down, unicode);
         event = (*$GSCreateSyntheticKeyEvent)(unicode, down, YES);
@@ -379,7 +434,7 @@ static void postKeyEvent(int down, uint16_t modifier, unichar unicode){
 
     // send events to SpringBoard if SBUserNotificationAlert is visible
     if (isSBUserNotificationAlertVisible()) {
-        sendGSEventToSpringBoard((GSEventRecord*) _GSEventGetGSEventRecord(event));
+        GSSendSystemEvent((GSEventRecord*) _GSEventGetGSEventRecord(event));
     } else {
         // send GSEvent
         sendGSEvent((GSEventRecord*) _GSEventGetGSEventRecord(event), location);
@@ -416,15 +471,21 @@ static void handleMouseEvent(const mouse_event_t *mouse_event){
 
     int buttons = mouse_event->buttons ? 1 : 0;
     // NSLog(@"MOUSE type %u, button %u, dx %f, dy %f", mouse_event->type, mouse_event->buttons, mouse_event->x, mouse_event->y);
-    postMouseEvent(mouse_x, mouse_y, buttons);
+    if (Level_ >= 5){
+        postMouseEventIOHID(mouse_x, mouse_y, buttons);
+    } else {
+        postMouseEventGS(mouse_x, mouse_y, buttons);
+    }
 }
 
-static void handleButtonEvent(const button_event_t *button_event){
+
+static void handleHomeLockVolumeButtonsGS(const button_event_t * button_event){
+
+    // NSLog(@"handleHomeLockVolumeButtonsIOHID %x", button_event->action);
+
     struct GSEventRecord record;
     memset(&record, 0, sizeof(record));
     record.timestamp = GSCurrentEventTimestamp();
-    
-    SBMediaController *mc = [%c(SBMediaController) sharedInstance];
 
     switch (button_event->action){
         case HWButtonHome:
@@ -442,6 +503,57 @@ static void handleButtonEvent(const button_event_t *button_event){
         case HWButtonVolumeDown:
             record.type = (button_event->down) != 0 ? kGSEventVolumeDownButtonDown : kGSEventVolumeDownButtonUp;
             GSSendSystemEvent(&record);
+            break;
+        default:
+            break;
+    }
+}
+
+static void handleHomeLockVolumeButtonsIOHID(const button_event_t * button_event){
+
+    // NSLog(@"handleHomeLockVolumeButtonsIOHID %x", button_event->action);
+
+    int usage_page = 0;
+    int usage = 0;
+    switch (button_event->action){
+        case HWButtonHome:
+            usage_page = 12;
+            usage = 0x40;
+            break;
+        case HWButtonLock:
+            usage_page = 12;
+            usage = 0x30;
+            break;
+        case HWButtonVolumeUp:
+            usage_page = 0xe9;
+            usage = 0x40;
+            break;
+        case HWButtonVolumeDown:
+            usage_page = 12;
+            usage = 0xea;
+            break;
+        default:
+            return;
+    }
+   postIOHIDEvent(IOHIDEventCreateKeyboardEvent(kCFAllocatorDefault, mach_absolute_time(), usage_page, usage, button_event->down, 0));
+}
+
+static void handleButtonEvent(const button_event_t *button_event){
+    
+    // NSLog(@"handleButtonEvent %x", button_event->action);
+
+    SBMediaController *mc = [%c(SBMediaController) sharedInstance];
+
+    switch (button_event->action){
+        case HWButtonHome:
+        case HWButtonLock:
+        case HWButtonVolumeUp:
+        case HWButtonVolumeDown:
+            if (Level_ >= 5){
+                return handleHomeLockVolumeButtonsIOHID(button_event);
+            } else {
+                return handleHomeLockVolumeButtonsGS(button_event);               
+            } 
             break;
         case HWButtonVolumeMute:
             if (!button_event->down) break;
@@ -485,14 +597,19 @@ static void handleButtonEvent(const button_event_t *button_event){
 
 static void keepAwake(void){
 
-    if (!%c(UIApplication)) return;
+    if (!%c(SBAwayController)) return;
 
     bool wasDimmed = [[%c(SBAwayController) sharedAwayController] isDimmed ];
     bool wasLocked = [[%c(SBAwayController) sharedAwayController] isLocked ];
 
     // prevent dimming
-    [(SpringBoard *) [%c(UIApplication) sharedApplication] resetIdleTimerAndUndim:true];
-    
+    SpringBoard * sb = (SpringBoard *) [%c(UIApplication) sharedApplication];
+    if ([sb respondsToSelector:@selector(resetIdleTimerAndUndim)]){
+        [sb resetIdleTimerAndUndim];
+    } else if ([sb respondsToSelector:@selector(resetIdleTimerAndUndim:)]){
+        [sb resetIdleTimerAndUndim:YES];
+    }
+
     // handle user unlock if it was locked and dimmed before
     // note: don't call attemptUnlock if it was undimmed as that resets the passcode
     if ( wasDimmed && wasLocked ){
@@ -504,17 +621,14 @@ static void keepAwake(void){
 static void init_graphicsservices(void){
 
     // GraphicsServices used
-    MyMSHookSymbol(GSTakePurpleSystemEventPort, "GSGetPurpleSystemEventPort");
-    if (GSTakePurpleSystemEventPort == NULL) {
-        MyMSHookSymbol(GSTakePurpleSystemEventPort, "GSCopyPurpleSystemEventPort");
-        PurpleAllocated = true;
-    }
     dlset($GSEventCreateKeyEvent, "GSEventCreateKeyEvent");
     dlset($GSCreateSyntheticKeyEvent, "_GSCreateSyntheticKeyEvent");
     dlset($GSEventSetKeyCode, "GSEventSetKeyCode");
     dlset($GSMainScreenSize, "GSMainScreenSize");
     dlset($GSMainScreenScaleFactor, "GSMainScreenScaleFactor");
     dlset($GSMainScreenOrientation, "GSMainScreenOrientation");
+    dlset($GSEventCopyCharacters, "GSEventCopyCharacters");
+    dlset($GSEventGetType, "GSEventGetType");
 }
 
 static void detect_iPads(void){
@@ -528,7 +642,6 @@ static void detect_iPads(void){
 void initialize(void){
 
     init_graphicsservices();
-    detectOSLevel();
     detect_iPads();
 
     // Get main screen size and retina factor
@@ -548,8 +661,8 @@ void initialize(void){
     mouse_max_x = screen_width - 1;
     mouse_max_y = screen_height - 1;
 
-    NSLog(@"hid-support: screen size: %f x %f, retina %f, orientation %f, iPad1 %u",
-        screen_width, screen_height, retina_factor, screen_orientation, is_iPad1);
+    // NSLog(@"hid-support: screen size: %f x %f, retina %f, orientation %f, iPad1 %u",
+    //    screen_width, screen_height, retina_factor, screen_orientation, is_iPad1);
 
     // orientation values
     // iPad 2:   768 x 1024  - 4.7123889923095703
@@ -630,6 +743,7 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
               break;
                     
         case GSEVENTRECORD:
+            // NSLog(@"GSEVENTRECORD");
             keepAwake();
             location = CGPointMake(100, 100);
             sendGSEvent((GSEventRecord*)data, location);
@@ -648,18 +762,60 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
     return returnData;  // as stated in header, both data and returnData will be released for us after callback returns
 }
 
-%ctor{
-
-    %init();
-
-    // Setup a mach port for receiving events from outside
-    CFStringRef portName = nil;
-    if (%c(SpringBoard)) {
-        portName = CFSTR(HID_SUPPORT_PORT_NAME);
-    } else {
-        portName = CFSTR(HID_SUPPORT_PORT_NAME_BB);
-    }
-    CFMessagePortRef local = CFMessagePortCreateLocal(NULL, portName, myCallBack, NULL, NULL);
+static void setupSpringboardMessagePort(){
+    CFMessagePortRef local = CFMessagePortCreateLocal(NULL, CFSTR(HID_SUPPORT_PORT_NAME), myCallBack, NULL, NULL);
     CFRunLoopSourceRef source = CFMessagePortCreateRunLoopSource(NULL, local, 0);
     CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
+    rocketbootstrap_cfmessageportexposelocal(local);
+}
+
+static void setupBackboarddMessagePort(){
+    CFMessagePortRef local = CFMessagePortCreateLocal(NULL, CFSTR(HID_SUPPORT_PORT_NAME_BB), myCallBack, NULL, NULL);
+    CFRunLoopSourceRef source = CFMessagePortCreateRunLoopSource(NULL, local, 0);
+    CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
+    rocketbootstrap_cfmessageportexposelocal(local);
+}
+
+// Support GSEventKeyDown on iOS 7 and later
+%hook UIApplication
+- (BOOL)handleEvent:(GSEventRef)gsEvent withNewEvent:(id)arg2{
+    if (Level_ >= 5 && gsEvent) {
+        GSEventType gsType = $GSEventGetType(gsEvent);
+        if (gsType == kGSEventKeyDown){
+            CFStringRef text = $GSEventCopyCharacters(gsEvent);
+            if (text){
+                // NSLog(@"hid-support: injecting '%@'", text);
+                UIKeyboardImpl * keyboardImpl = (UIKeyboardImpl*) [%c(UIKeyboardImpl) sharedInstance];
+                [keyboardImpl addInputString:(NSString*)text];
+                CFRelease(text);
+            }
+        }
+    }
+    return %orig;
+}
+%end
+
+%ctor{
+    detectOSLevel();
+    // NSLog(@"hid-support detected OS level %u", Level_);
+
+    NSString *identifier = [[NSBundle mainBundle] bundleIdentifier];
+    // NSLog(@"hid-support: inside %@", identifier);
+
+    if ([identifier isEqualToString:@"com.apple.backboardd"]){
+        setupBackboarddMessagePort();
+        return;
+    }
+
+   if ([identifier isEqualToString:@"com.apple.springboard"]){
+        setupSpringboardMessagePort();
+        return;
+    }
+
+    // Inside UIKit app
+    if (Level_ >= 5){
+        // setup GSEvent handler
+        %init();
+        init_graphicsservices();
+    }
 }

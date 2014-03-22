@@ -1,10 +1,14 @@
 include $(THEOS)/makefiles/common.mk
 
-# use latest SDK but use iOS 3.0 as deployment target
-export TARGET=iphone:latest:3.0
-
 TWEAK_NAME = hidspringboard
 hidspringboard_FILES = Tweak.xm
 hidspringboard_CFLAGS = -I../3rdParty
+hidspringboard_LDFLAGS = $(ISYSROOT)/System/Library/Frameworks/IOKit.framework/Versions/A/IOKit
 hidspringboard_PRIVATE_FRAMEWORKS = QuartzCore GraphicsServices
+
+# rocketbootstrap
+hidspringboard_CFLAGS    += -I/Projects/RocketBootstrap/
+hidspringboard_LDFLAGS   += -L/Projects/RocketBootstrap/.theos/obj
+hidspringboard_LIBRARIES += substrate rocketbootstrap
+
 include $(THEOS_MAKE_PATH)/tweak.mk
