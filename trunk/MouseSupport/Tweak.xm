@@ -87,7 +87,10 @@ typedef struct {} Context;
 @end
 
 @interface SpringBoard : UIApplication
+// iOS < 7
 - (void)resetIdleTimerAndUndim:(BOOL)fp8;
+// iOS  >= 7
+- (void)resetIdleTimerAndUndim;
 // active UI on 3.2+
 -(int) activeInterfaceOrientation;
 // frontmost app port on 6.0+
@@ -130,9 +133,42 @@ typedef struct {} Context;
 
 @interface SBUIController : NSObject
 +(SBUIController*) sharedInstance;
--(BOOL) isSwitcherShowing;
 -(void) dismissSwitcherAnimated:(BOOL)animated;
+// iOS 6
+-(BOOL) isSwitcherShowing;
+// iOS 7
+-(BOOL) isAppSwitcherShowing;
 @end
+
+// from iOS 7+
+@interface SBNotificationCenterController
++(id) sharedInstance;
+-(BOOL)isVisible;
+- (void)presentAnimated:(BOOL)animated;
+- (void)dismissAnimated:(BOOL)animated;
+@end
+
+// from iOS 7+
+@interface SBControlCenterController
++(id) sharedInstance;
+-(BOOL)isVisible;
+- (void)presentAnimated:(BOOL)animated;
+- (void)dismissAnimated:(BOOL)animated;
+@end
+
+// from iOS 7+
+@interface SBLockScreenManager
++(id)sharedInstance;
+-(void)unlockUIFromSource:(int)source withOptions:(id)options;
+@property(readonly, assign) BOOL isUILocked;
+@end
+
+// from iOS 7+
+@interface SBUserAgent
++(id)sharedUserAgent;
+-(void)undimScreen;
+@end
+
 
 #if !defined(__IPHONE_3_2) || __IPHONE_3_2 > __IPHONE_OS_VERSION_MAX_ALLOWED
 typedef enum {
@@ -340,7 +376,7 @@ static void loadPreferences()
     NSArray *keys = [NSArray arrayWithObjects:@"swapButtonsOneTwo", @"swapButtonsTwoThree", @"mouseSpeed", nil];
     NSDictionary *dict = (NSDictionary *)CFPreferencesCopyMultiple((CFArrayRef)keys, CFSTR(APP_ID),
         kCFPreferencesCurrentUser, kCFPreferencesCurrentHost);
-    NSLog(@"MouseSupport prefs %@", dict);
+    // NSLog(@"MouseSupport prefs %@", dict);
     if (dict) {
         NSArray *values = [dict objectsForKeys:keys notFoundMarker:[NSNull null]];
         id obj;
@@ -391,43 +427,36 @@ static CFDataRef mouseCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef c
     // static BOOL idleTimerDisabled = NO;
 
     // NOTE: Handle the most common case first
-    if (msgid == MouseMessageTypeEvent) {
-        // Handle the mouse event
-        if (CFDataGetLength(cfData) == sizeof(MouseEvent)) {
-            MouseEvent *event = (MouseEvent *)[(NSData *)cfData bytes];
-            if (event != NULL) {
-                SpringBoard *springBoard = (SpringBoard *)[UIApplication sharedApplication];
-                if (event->absolute)
-                    [springBoard handleMouseEventAtPoint:CGPointMake(event->x, event->y) buttons:event->buttons];
-                else
-                    [springBoard handleMouseEventWithX:event->x Y:event->y buttons:event->buttons];
-                    
-                    // from BTstack Keyboard                    
-                    bool wasDimmed = [[$SBAwayController sharedAwayController] isDimmed ];
-                    bool wasLocked = [[$SBAwayController sharedAwayController] isLocked ];
-                    
-                    // prevent dimming - from BTstack Keyboard
-                    [(SpringBoard *) [UIApplication sharedApplication] resetIdleTimerAndUndim:true];
-                    
-                    // handle user unlock
-                    if ( wasDimmed || wasLocked ){
-                        [[$SBAwayController sharedAwayController] attemptUnlock];
-                        [[$SBAwayController sharedAwayController] unlockWithSound:NO];
+    switch (msgid) {
+        case MouseMessageTypeEvent:
+            // Handle the mouse event
+            if (CFDataGetLength(cfData) == sizeof(MouseEvent)) {
+                MouseEvent *event = (MouseEvent *)[(NSData *)cfData bytes];
+                if (event != NULL) {
+                    SpringBoard *springBoard = (SpringBoard *)[UIApplication sharedApplication];
+                    if (event->absolute) {
+                        [springBoard handleMouseEventAtPoint:CGPointMake(event->x, event->y) buttons:event->buttons];
                     }
-
+                    else {
+                        [springBoard handleMouseEventWithX:event->x Y:event->y buttons:event->buttons];
+                    }
+                    [springBoard mouseUndim];
+                }
             }
-        }
-    } else if (msgid == MouseMessageTypeSetEnabled) {
-        // Make sure pointer is visible and matches device orientation
-        if (CFDataGetLength(cfData) == sizeof(BOOL)) {
-            BOOL *enabled = (BOOL *)[(NSData *)cfData bytes];
-            if (enabled != NULL) {
-                SpringBoard *springBoard = (SpringBoard *)[UIApplication sharedApplication];
-                [springBoard setMousePointerEnabled:(*enabled)];
+            break;
+        case MouseMessageTypeSetEnabled:
+            // Make sure pointer is visible and matches device orientation
+            if (CFDataGetLength(cfData) == sizeof(BOOL)) {
+                BOOL *enabled = (BOOL *)[(NSData *)cfData bytes];
+                if (enabled != NULL) {
+                    SpringBoard *springBoard = (SpringBoard *)[UIApplication sharedApplication];
+                    [springBoard setMousePointerEnabled:(*enabled)];
+                }
             }
-        }
-    } else {
-        NSLog(@"Mouse: Unknown message type: %x", (int) msgid); 
+            break;
+        default:
+            NSLog(@"Mouse: Unknown message type: %x", (int) msgid);
+            break;
     }
 
     // Do not return a reply to the caller
@@ -453,7 +482,8 @@ typedef enum {
     swipe_from_bottom,
     wait_for_release
 } gesture_t;
-static gesture_t gesture_state = no_touch;
+static gesture_t control_gesture_state = no_touch;
+static gesture_t notification_gesture_state = no_touch;
 
 float getMouseInterfaceYForCurrentOrientation(CGPoint point){
     switch (orientation_) {
@@ -483,7 +513,8 @@ BOOL mouseAtTopEdge(CGPoint point){
     return getMouseInterfaceYForCurrentOrientation(point) <= EDGE_THRESHOLD;
 }
 BOOL mouseAtBottomEdge(CGPoint point){
-    return getInterfaceHeightForCurrentOrientation() - getMouseInterfaceYForCurrentOrientation(point) <= EDGE_THRESHOLD;
+    float distanceToBottom = getInterfaceHeightForCurrentOrientation() - getMouseInterfaceYForCurrentOrientation(point);
+    return distanceToBottom <= EDGE_THRESHOLD;
 }
 BOOL mouseBelowTopThreshold(CGPoint point){
     return getMouseInterfaceYForCurrentOrientation(point) >= ACTIVATE_THRESHOLD;
@@ -493,53 +524,120 @@ BOOL mouseAboveBottomThreshold(CGPoint point){
 }
 
 // return true if event was handled/eaten
+BOOL isControlCenterShown(){
+     return [(SBControlCenterController*) [%c(SBControlCenterController) sharedInstance] isVisible];
+}
+
+BOOL isNotificationCenterShown(){
+    return [(SBBulletinListController*)       [%c(SBBulletinListController) sharedInstance] listViewIsActive] ||
+           [(SBNotificationCenterController*) [%c(SBNotificationCenterController) sharedInstance] isVisible];
+}
+
 BOOL handleNotificationCenterGestures(CGPoint point, int button){
 
-    static Class class_SBBulletinListController = objc_getClass("SBBulletinListController");
-    if (!class_SBBulletinListController) return false;
+    if (isControlCenterShown()) return false;
+    if (control_gesture_state != no_touch) false;
 
-    SBBulletinListController * controller = (SBBulletinListController*) [class_SBBulletinListController sharedInstance];
-    if (!controller) return false;
+    // iOS 5-6
+    SBBulletinListController * bulletinController = (SBBulletinListController*) [%c(SBBulletinListController) sharedInstance];
+    // iOS 7
+    SBNotificationCenterController * notificationController = (SBNotificationCenterController*) [%c(SBNotificationCenterController) sharedInstance];
 
-    BOOL isShown = [controller listViewIsActive];
+    if (!bulletinController && !notificationController) return false;
+
+    BOOL isShown = isNotificationCenterShown();
 
     // state = local state + list view is active 
-    switch (gesture_state){
+    switch (notification_gesture_state){
         case no_touch:
             if (!button) break;
             if (isShown){
                 if (!mouseAtBottomEdge(point)) break;
-                gesture_state = swipe_from_bottom;
+                notification_gesture_state = swipe_from_bottom;
             } else {
                 if (!mouseAtTopEdge(point)) break;
-                gesture_state = swipe_from_top;
+                notification_gesture_state = swipe_from_top;
             }
             return true;
         case swipe_from_top:
             if (!button || isShown){
-                gesture_state = no_touch;
+                notification_gesture_state = no_touch;
                 break;
             }
             if (!mouseBelowTopThreshold(point)) break;
-            [controller showListViewAnimated:YES];
-            gesture_state = wait_for_release;
+            [bulletinController showListViewAnimated:YES];
+            [notificationController presentAnimated:YES];
+            notification_gesture_state = wait_for_release;
             return true;
         case swipe_from_bottom:
             if (!button || !isShown){
-                gesture_state = no_touch;
+                notification_gesture_state = no_touch;
                 break;
             }
             if (!mouseAboveBottomThreshold(point)) break;
-            [controller hideListViewAnimated:YES];
-            gesture_state = wait_for_release;
+            [bulletinController hideListViewAnimated:YES];
+            [notificationController dismissAnimated:YES];
+            notification_gesture_state = wait_for_release;
             return true;
         case wait_for_release:
             if (button) break;
-            gesture_state = no_touch;
+            notification_gesture_state = no_touch;
             return true;
     }
     return false;
 }
+
+// return true if event was handled/eaten
+BOOL handleControlCenterGestures(CGPoint point, int button){
+
+    if (isNotificationCenterShown()) return false;
+    if (notification_gesture_state != no_touch) false;
+
+    // iOS 7
+    SBControlCenterController * controlCenterController = (SBControlCenterController*) [%c(SBControlCenterController) sharedInstance];
+
+    if (!controlCenterController) return false;
+
+    BOOL isShown = isControlCenterShown();
+
+    // state = local state + list view is active 
+    switch (control_gesture_state){
+        case no_touch:
+            if (!button) break;
+            if (isShown){
+                if (!mouseAtTopEdge(point)) break;
+                control_gesture_state = swipe_from_top;
+            } else {
+                if (!mouseAtBottomEdge(point)) break;
+                control_gesture_state = swipe_from_bottom;
+            }
+            return true;
+        case swipe_from_bottom:
+            if (!button || isShown){
+                control_gesture_state = no_touch;
+                break;
+            }
+            if (!mouseAboveBottomThreshold(point)) break;
+            [controlCenterController presentAnimated:YES];
+            control_gesture_state = wait_for_release;
+            return true;
+        case swipe_from_top:
+            if (!button || !isShown){
+                control_gesture_state = no_touch;
+                break;
+            }
+            if (!mouseBelowTopThreshold(point)) break;
+            [controlCenterController dismissAnimated:YES];
+            control_gesture_state = wait_for_release;
+            return true;
+        case wait_for_release:
+            if (button) break;
+            control_gesture_state = no_touch;
+            return true;
+    }
+    return false;
+}
+
 
 // END NOTIFICATION CENTER CODE
 
@@ -566,20 +664,43 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 
 %new(v@:)
 -(void)mouseUndim {
-     // from BTstack Keyboard                    
-    bool wasDimmed = [[$SBAwayController sharedAwayController] isDimmed ];
-    bool wasLocked = [[$SBAwayController sharedAwayController] isLocked ];
-    
-    // prevent dimming - from BTstack Keyboard
-    [self resetIdleTimerAndUndim:true];
-    
-    // handle user unlock
-    if ( wasDimmed || wasLocked ){
-        [[$SBAwayController sharedAwayController] attemptUnlock];
-        [[$SBAwayController sharedAwayController] unlockWithSound:NO];
+    // pre iOS 7:
+    if ($SBAwayController){
+        // prevent dimming - from BTstack Keyboard
+        [self resetIdleTimerAndUndim:YES];
+    }
+    if (%c(SBLockScreenManager)){
+        // turn on screen (nop if already on)
+        SBUserAgent * sbUserAget = [%c(SBUserAgent) sharedUserAgent];
+        [sbUserAget undimScreen];
+
+        // and prevent dimming
+        [self resetIdleTimerAndUndim];
     }
 }
 
+%new
+-(void)mouseUnlockIfNeeded{
+    // pre iOS 7:
+    if ($SBAwayController){
+        // from BTstack Keyboard                    
+        bool wasDimmed = [[$SBAwayController sharedAwayController] isDimmed ];
+        bool wasLocked = [[$SBAwayController sharedAwayController] isLocked ];
+        
+        // handle user unlock
+        if ( wasDimmed || wasLocked ){
+            [[$SBAwayController sharedAwayController] attemptUnlock];
+            [[$SBAwayController sharedAwayController] unlockWithSound:NO];
+        }
+    }
+    if (%c(SBLockScreenManager)){
+        // request device unlock, if locked
+        SBLockScreenManager * sbLockScreenManager = (SBLockScreenManager*) [%c(SBLockScreenManager) sharedInstance];
+        if ([sbLockScreenManager isUILocked]){
+            [sbLockScreenManager unlockUIFromSource:0 withOptions:nil];
+        }
+    }
+}
 
 %new(v@:c)
 - (void)setMousePointerEnabled:(BOOL)enabled
@@ -672,14 +793,13 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     return currentMouseLocation;
 }
 
+// @deprecated: use hid_inject_gseventrecord directly
 %new(v@:^v)
 -(void)sendCustomMouseEvent:(void *) event{
+    // NSLog(@"sendCustomMouseEvent");
     hid_inject_gseventrecord((uint8_t*)event);
 }
 
-
-
-// NOTE: Swiped and modified from Jay Freeman (saurik)'s Veency
 %new(v@:{CGPoint=ff}i)
 - (void)handleMouseEventAtPoint:(CGPoint)point buttons:(int)buttons
 {
@@ -731,6 +851,8 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     if (twas != tis || tis) {
         // support notification center
         BOOL done = handleNotificationCenterGestures(point, tis);
+        if (done) return;
+        done = handleControlCenterGestures(point, tis);
         if (done) return;
 
         // forward all apps to SpringBoard while app switcher is showing

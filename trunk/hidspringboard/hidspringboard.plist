@@ -1,6 +1,6 @@
 {
     Filter = {
-        Bundles = ("com.apple.springboard");
+        Bundles = ("com.apple.UIKit");
         Executables = ("backboardd");
         Mode = "Any";
     };

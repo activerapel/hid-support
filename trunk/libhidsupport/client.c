@@ -35,6 +35,7 @@
 
 #include "../hid-support-internal.h"
 #include "../3rdParty/GraphicsServices/GSEvent.h"
+#include "RocketBootstrap.h"
 
 #define INVALID_RESULT -5
 
@@ -70,7 +71,7 @@ static void hid_support_message_port_refresh(){
 	}
 	// create new one
 	if (!hid_support_message_port) {
-		hid_support_message_port = CFMessagePortCreateRemote(NULL, CFSTR(HID_SUPPORT_PORT_NAME));
+		hid_support_message_port = rocketbootstrap_cfmessageportcreateremote(NULL, CFSTR(HID_SUPPORT_PORT_NAME));
 	}
 }
 
@@ -109,7 +110,7 @@ static void hid_support_bb_message_port_refresh(){
     }
     // create new one
     if (!hid_support_bb_message_port) {
-        hid_support_bb_message_port = CFMessagePortCreateRemote(NULL, CFSTR(HID_SUPPORT_PORT_NAME_BB));
+		hid_support_bb_message_port = rocketbootstrap_cfmessageportcreateremote(NULL, CFSTR(HID_SUPPORT_PORT_NAME_BB));
     }
 }
 
