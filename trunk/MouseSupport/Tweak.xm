@@ -87,10 +87,6 @@ typedef struct {} Context;
 @end
 
 @interface SpringBoard : UIApplication
-// iOS < 7
-- (void)resetIdleTimerAndUndim:(BOOL)fp8;
-// iOS  >= 7
-- (void)resetIdleTimerAndUndim;
 // active UI on 3.2+
 -(int) activeInterfaceOrientation;
 // frontmost app port on 6.0+
@@ -151,7 +147,6 @@ typedef enum {
 
 
 @interface SpringBoard (Mouse)
-- (void)mouseUndim;
 - (void)setMousePointerEnabled:(BOOL)enabled;
 - (void)handleMouseEventAtPoint:(CGPoint)point buttons:(int)buttons;
 - (CGPoint)handleMouseEventWithX:(float)x Y:(float)y buttons:(int)buttons;
@@ -391,7 +386,6 @@ static CFDataRef mouseCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef c
                     else {
                         [springBoard handleMouseEventWithX:event->x Y:event->y buttons:event->buttons];
                     }
-                    [springBoard mouseUndim];
                 }
             }
             break;
