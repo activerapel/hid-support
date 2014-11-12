@@ -97,40 +97,6 @@ typedef struct {} Context;
 -(unsigned)_frontmostApplicationPort;
 @end
 
-@interface SBAwayController : NSObject
-+ (id)sharedAwayController;
-- (BOOL)undimsDisplay;
-- (id)awayView;
-- (void)lock;
-- (void)_unlockWithSound:(BOOL)fp8;
-- (void)unlockWithSound:(BOOL)fp8;
-- (void)unlockWithSound:(BOOL)fp8 alertDisplay:(id)fp12;
-- (void)loadPasscode;
-- (id)devicePasscode;
-- (BOOL)isPasswordProtected;
-- (void)activationChanged:(id)fp8;
-- (BOOL)isDeviceLockedOrBlocked;
-- (void)setDeviceLocked:(BOOL)fp8;
-- (void)applicationRequestedDeviceUnlock;
-- (void)cancelApplicationRequestedDeviceLockEntry;
-- (BOOL)isBlocked;
-- (BOOL)isPermanentlyBlocked:(double *)fp8;
-- (BOOL)isLocked;
-- (void)attemptUnlock;
-- (BOOL)isAttemptingUnlock;
-- (BOOL)attemptDeviceUnlockWithPassword:(id)fp8 alertDisplay:(id)fp12;
-- (void)cancelDimTimer;
-- (void)restartDimTimer:(float)fp8;
-- (id)dimTimer;
-- (BOOL)isDimmed;
-- (void)finishedDimmingScreen;
-- (void)dimScreen:(BOOL)fp8;
-- (void)undimScreen;
-- (void)userEventOccurred;
-- (void)activate;
-- (void)deactivate;
-@end
-
 @interface SBUIController : NSObject
 +(SBUIController*) sharedInstance;
 -(void) dismissSwitcherAnimated:(BOOL)animated;
@@ -155,20 +121,6 @@ typedef struct {} Context;
 - (void)presentAnimated:(BOOL)animated;
 - (void)dismissAnimated:(BOOL)animated;
 @end
-
-// from iOS 7+
-@interface SBLockScreenManager
-+(id)sharedInstance;
--(void)unlockUIFromSource:(int)source withOptions:(id)options;
-@property(readonly, assign) BOOL isUILocked;
-@end
-
-// from iOS 7+
-@interface SBUserAgent
-+(id)sharedUserAgent;
--(void)undimScreen;
-@end
-
 
 #if !defined(__IPHONE_3_2) || __IPHONE_3_2 > __IPHONE_OS_VERSION_MAX_ALLOWED
 typedef enum {
@@ -206,6 +158,7 @@ typedef enum {
 - (void)moveMousePointerToPoint:(CGPoint)point;
 - (CGPoint)mouseLocation;
 - (void)mouseHandleOrientationChange:(int)orientation;
+- (BOOL)mouseIsLocked;
 @end
 
 
@@ -254,8 +207,6 @@ static int orientation_ = 0;
 
 // Speed is used with relative mouse positioning
 static float mouseSpeed = 1.0f;
-
-static Class $SBAwayController = objc_getClass("SBAwayController");
 
 // GS functions
 static bool PurpleAllocated = NO;
@@ -661,46 +612,6 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 #endif
 
 %hook SpringBoard
-
-%new(v@:)
--(void)mouseUndim {
-    // pre iOS 7:
-    if ($SBAwayController){
-        // prevent dimming - from BTstack Keyboard
-        [self resetIdleTimerAndUndim:YES];
-    }
-    if (%c(SBLockScreenManager)){
-        // turn on screen (nop if already on)
-        SBUserAgent * sbUserAget = [%c(SBUserAgent) sharedUserAgent];
-        [sbUserAget undimScreen];
-
-        // and prevent dimming
-        [self resetIdleTimerAndUndim];
-    }
-}
-
-%new
--(void)mouseUnlockIfNeeded{
-    // pre iOS 7:
-    if ($SBAwayController){
-        // from BTstack Keyboard                    
-        bool wasDimmed = [[$SBAwayController sharedAwayController] isDimmed ];
-        bool wasLocked = [[$SBAwayController sharedAwayController] isLocked ];
-        
-        // handle user unlock
-        if ( wasDimmed || wasLocked ){
-            [[$SBAwayController sharedAwayController] attemptUnlock];
-            [[$SBAwayController sharedAwayController] unlockWithSound:NO];
-        }
-    }
-    if (%c(SBLockScreenManager)){
-        // request device unlock, if locked
-        SBLockScreenManager * sbLockScreenManager = (SBLockScreenManager*) [%c(SBLockScreenManager) sharedInstance];
-        if ([sbLockScreenManager isUILocked]){
-            [sbLockScreenManager unlockUIFromSource:0 withOptions:nil];
-        }
-    }
-}
 
 %new(v@:c)
 - (void)setMousePointerEnabled:(BOOL)enabled
