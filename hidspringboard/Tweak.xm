@@ -79,12 +79,36 @@ typedef enum {
 
 @interface SBAwayController : NSObject
 + (id)sharedAwayController;
+- (BOOL)undimsDisplay;
+- (id)awayView;
+- (void)lock;
+- (void)_unlockWithSound:(BOOL)fp8;
 - (void)unlockWithSound:(BOOL)fp8;
+- (void)unlockWithSound:(BOOL)fp8 alertDisplay:(id)fp12;
+- (void)loadPasscode;
+- (id)devicePasscode;
+- (BOOL)isPasswordProtected;
+- (void)activationChanged:(id)fp8;
+- (BOOL)isDeviceLockedOrBlocked;
+- (void)setDeviceLocked:(BOOL)fp8;
+- (void)applicationRequestedDeviceUnlock;
+- (void)cancelApplicationRequestedDeviceLockEntry;
+- (BOOL)isBlocked;
+- (BOOL)isPermanentlyBlocked:(double *)fp8;
 - (BOOL)isLocked;
 - (void)attemptUnlock;
+- (BOOL)isAttemptingUnlock;
+- (BOOL)attemptDeviceUnlockWithPassword:(id)fp8 alertDisplay:(id)fp12;
+- (void)cancelDimTimer;
+- (void)restartDimTimer:(float)fp8;
+- (id)dimTimer;
 - (BOOL)isDimmed;
+- (void)finishedDimmingScreen;
+- (void)dimScreen:(BOOL)fp8;
 - (void)undimScreen;
 - (void)userEventOccurred;
+- (void)activate;
+- (void)deactivate;
 @end
 
 // 3.2+
@@ -93,11 +117,24 @@ typedef enum {
 - (void)adjustBacklightLevel:(BOOL)fp8;
 @end
 
+// from iOS 7+
+@interface SBLockScreenManager
++(id)sharedInstance;
+-(void)unlockUIFromSource:(int)source withOptions:(id)options;
+@property(readonly, assign) BOOL isUILocked;
+@end
+
 @interface SBMediaController : NSObject 
 +(SBMediaController*) sharedInstance;
 -(void)togglePlayPause;
 -(BOOL)isPlaying;
 -(void)changeTrack:(int)change;
+@end
+
+// from iOS 7+
+@interface SBUserAgent
++(id)sharedUserAgent;
+-(void)undimScreen;
 @end
 
 @interface VolumeControl : NSObject 
@@ -124,14 +161,17 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
 // globals
 
 // GS functions
-GSEventRef  (*$GSEventCreateKeyEvent)(int, CGPoint, CFStringRef, CFStringRef, uint32_t, UniChar, short, short);
-GSEventRef  (*$GSCreateSyntheticKeyEvent)(UniChar, BOOL, BOOL);
-void        (*$GSEventSetKeyCode)(GSEventRef event, uint16_t keyCode);
-CGSize      (*$GSMainScreenSize)(void);
-float       (*$GSMainScreenScaleFactor)(void);
-float       (*$GSMainScreenOrientation)(void);
-CFStringRef (*$GSEventCopyCharacters)(GSEventRef event);
-GSEventType (*$GSEventGetType)(GSEventRef event);
+static GSEventRef  (*$GSEventCreateKeyEvent)(int, CGPoint, CFStringRef, CFStringRef, uint32_t, UniChar, short, short);
+static GSEventRef  (*$GSCreateSyntheticKeyEvent)(UniChar, BOOL, BOOL);
+static void        (*$GSEventSetKeyCode)(GSEventRef event, uint16_t keyCode);
+static CGSize      (*$GSMainScreenSize)(void);
+static float       (*$GSMainScreenScaleFactor)(void);
+static float       (*$GSMainScreenOrientation)(void);
+static CFStringRef (*$GSEventCopyCharacters)(GSEventRef event);
+static GSEventType (*$GSEventGetType)(GSEventRef event);
+
+// IOHID functions
+static void (*$IOHIDEventSetSenderID)(IOHIDEventRef event, uint64_t senderID) = NULL;
 
 // GSEvent being sent
 static uint8_t  touchEvent[sizeof(GSEventRecord) + sizeof(GSHandInfo) + sizeof(GSPathInfo)];
@@ -157,6 +197,8 @@ static int Level_;  // 0 = < 3.0, 1 = 3.0-3.1.x, 2 = 3.2-4.3.3, 3 = 5.0-5.1.1, 4
 static int is_iPad1 = 0;
 
 static enum { PORTRAIT, MODE_A, MODE_B } screen_rotation = PORTRAIT;
+
+static Class $SBAwayController = objc_getClass("SBAwayController");
 
 template <typename Type_>
 static void dlset(Type_ &function, const char *name) {
@@ -348,8 +390,10 @@ static void postMouseEventIOHID(float x, float y, int click){
     IOHIDEventRef parent = IOHIDEventCreateDigitizerEvent(kCFAllocatorDefault, mach_absolute_time(), kIOHIDDigitizerTransducerTypeHand, 1<<22, 1, parent_flags, 0, xf, yf, 0, 0, 0, 0, 0, 0);
     IOHIDEventSetIntegerValue(parent, kIOHIDEventFieldIsBuiltIn, true);
     IOHIDEventSetIntegerValue(parent, kIOHIDEventFieldDigitizerIsDisplayIntegrated, true);
-    IOHIDEventSetSenderID(parent, 0x0123456789ABCDEF);
-
+    if ($IOHIDEventSetSenderID){
+        // not in SDK 5.1 ARMv6 slice of IOKIT
+        ($IOHIDEventSetSenderID)(parent, 0x0123456789ABCDEF);
+    }
     IOHIDEventRef child = IOHIDEventCreateDigitizerFingerEvent(kCFAllocatorDefault, mach_absolute_time(), 3, 2, child_flags, xf, yf, 0, 0, 0, click, click, 0);
     IOHIDEventAppendEvent(parent, child);
     CFRelease(child);
@@ -595,27 +639,63 @@ static void handleButtonEvent(const button_event_t *button_event){
     }
 }
 
+static bool isLocked() {
+    // pre iOS 7:
+    if ($SBAwayController){
+        return [[$SBAwayController sharedAwayController] isLocked];
+    }        
+    if (%c(SBLockScreenManager)){
+        // request device unlock, if locked
+        SBLockScreenManager * sbLockScreenManager = (SBLockScreenManager*) [%c(SBLockScreenManager) sharedInstance];
+        return [sbLockScreenManager isUILocked];
+    }
+    return NO;
+}
+
+static void undimDisplay(){
+
+    // pre iOS 7:
+    if ($SBAwayController){
+        // prevent dimming - from BTstack Keyboard
+        [(SpringBoard *)[%c(SpringBoard) sharedApplication] resetIdleTimerAndUndim:YES];
+    }
+    if (%c(SBLockScreenManager)){
+        // turn on screen (nop if already on)
+        SBUserAgent * sbUserAget = [%c(SBUserAgent) sharedUserAgent];
+        [sbUserAget undimScreen];
+
+        // and prevent dimming
+        [(SpringBoard *)[%c(SpringBoard) sharedApplication] resetIdleTimerAndUndim];
+    }
+}
+
+static void unlockDevice(){
+    // pre iOS 7:
+    if ($SBAwayController){
+        // from BTstack Keyboard                    
+        bool wasDimmed = [[$SBAwayController sharedAwayController] isDimmed ];
+        bool wasLocked = [[$SBAwayController sharedAwayController] isLocked ];
+        
+        // handle user unlock
+        if ( wasDimmed || wasLocked ){
+            [[$SBAwayController sharedAwayController] attemptUnlock];
+            [[$SBAwayController sharedAwayController] unlockWithSound:NO];
+        }
+    }
+    if (%c(SBLockScreenManager)){
+        // request device unlock, if locked
+        SBLockScreenManager * sbLockScreenManager = (SBLockScreenManager*) [%c(SBLockScreenManager) sharedInstance];
+        if ([sbLockScreenManager isUILocked]){
+            [sbLockScreenManager unlockUIFromSource:0 withOptions:nil];
+        }
+    }
+}
+
 static void keepAwake(void){
-
-    if (!%c(SBAwayController)) return;
-
-    bool wasDimmed = [[%c(SBAwayController) sharedAwayController] isDimmed ];
-    bool wasLocked = [[%c(SBAwayController) sharedAwayController] isLocked ];
-
-    // prevent dimming
-    SpringBoard * sb = (SpringBoard *) [%c(UIApplication) sharedApplication];
-    if ([sb respondsToSelector:@selector(resetIdleTimerAndUndim)]){
-        [sb resetIdleTimerAndUndim];
-    } else if ([sb respondsToSelector:@selector(resetIdleTimerAndUndim:)]){
-        [sb resetIdleTimerAndUndim:YES];
+    if (isLocked()){
+        unlockDevice();
     }
-
-    // handle user unlock if it was locked and dimmed before
-    // note: don't call attemptUnlock if it was undimmed as that resets the passcode
-    if ( wasDimmed && wasLocked ){
-        [[%c(SBAwayController) sharedAwayController] attemptUnlock];
-        [[%c(SBAwayController) sharedAwayController] unlockWithSound:NO];
-    }
+    undimDisplay();
 }
 
 static void init_graphicsservices(void){
@@ -642,6 +722,7 @@ static void detect_iPads(void){
 void initialize(void){
 
     init_graphicsservices();
+    dlset($IOHIDEventSetSenderID, "IOHIDEventSetSenderID");
     detect_iPads();
 
     // Get main screen size and retina factor
@@ -697,15 +778,16 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
     unsigned int i;
     // have pointers ready
     key_event_t     * key_event;
+    const mouse_event_t   * mouse_event;
     dimension_t dimension_result;
     CFDataRef returnData = NULL;
     CGPoint location;
 
     switch ( (hid_event_type_t) msgid){
         case TEXT:
-            keepAwake();
             // regular text
             if (dataLen == 0 || !data) break;
+            keepAwake();
             // append \0 byte for NSString conversion
             buffer = (char*) malloc(dataLen + 1);
             if (!buffer) {
@@ -731,9 +813,18 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
             break;
             
         case MOUSE:
-            keepAwake();
             if (dataLen != sizeof(mouse_event_t) || !data) break;
-            handleMouseEvent((const mouse_event_t *) data);
+            mouse_event = (const mouse_event_t *) data;
+            // when locked, keep device dimmed until user clicks to unlock
+            if (isLocked()){
+                if (mouse_event->buttons){
+                    undimDisplay();
+                    unlockDevice();
+                }
+            } else {
+                undimDisplay();
+            }
+            handleMouseEvent(mouse_event);
             break;
             
         case BUTTON:
