@@ -190,8 +190,13 @@ static float mouse_max_y = 0;
 static float mouse_x = 0;
 static float mouse_y = 0;
 
-// access to system event server
+// iOS version level
 static int Level_;  // 0 = < 3.0, 1 = 3.0-3.1.x, 2 = 3.2-4.3.3, 3 = 5.0-5.1.1, 4 = 6.0-6.1.x, 5 = 7.0+ 
+
+// backboardd/springboard
+static BOOL inSpringBoard = NO;
+static BOOL inBackboardd  = NO;
+
 
 // iPad support
 static int is_iPad1 = 0;
@@ -640,6 +645,8 @@ static void handleButtonEvent(const button_event_t *button_event){
 }
 
 static bool isLocked() {
+    if (!inSpringBoard) return NO;
+
     // pre iOS 7:
     if ($SBAwayController){
         return [[$SBAwayController sharedAwayController] isLocked];
@@ -653,6 +660,7 @@ static bool isLocked() {
 }
 
 static void undimDisplay(){
+    if (!inSpringBoard) return;
 
     // pre iOS 7:
     if ($SBAwayController){
@@ -670,6 +678,8 @@ static void undimDisplay(){
 }
 
 static void unlockDevice(){
+    if (!inSpringBoard) return;
+
     // pre iOS 7:
     if ($SBAwayController){
         // from BTstack Keyboard                    
@@ -692,6 +702,7 @@ static void unlockDevice(){
 }
 
 static void keepAwake(void){
+    if (!inSpringBoard) return;
     if (isLocked()){
         unlockDevice();
     }
@@ -816,13 +827,15 @@ static CFDataRef myCallBack(CFMessagePortRef local, SInt32 msgid, CFDataRef cfDa
             if (dataLen != sizeof(mouse_event_t) || !data) break;
             mouse_event = (const mouse_event_t *) data;
             // when locked, keep device dimmed until user clicks to unlock
-            if (isLocked()){
-                if (mouse_event->buttons){
+            if (inSpringBoard){
+                if (isLocked()){
+                    if (mouse_event->buttons){
+                        undimDisplay();
+                        unlockDevice();
+                    }
+                } else {
                     undimDisplay();
-                    unlockDevice();
                 }
-            } else {
-                undimDisplay();
             }
             handleMouseEvent(mouse_event);
             break;
@@ -894,11 +907,13 @@ static void setupBackboarddMessagePort(){
     // NSLog(@"hid-support: inside %@", identifier);
 
     if ([identifier isEqualToString:@"com.apple.backboardd"]){
+        inBackboardd = YES;
         setupBackboarddMessagePort();
         return;
     }
 
    if ([identifier isEqualToString:@"com.apple.springboard"]){
+        inSpringBoard = YES;
         setupSpringboardMessagePort();
         return;
     }
