@@ -185,6 +185,8 @@ typedef enum {
 
 @interface UIWindow (Private)
 - (void)setHidden:(BOOL)fp8;
+// since iOS 8
+- (void)_setSecure:(BOOL)arg1;
 @end
 
 @interface UIDevice (Private)
@@ -736,6 +738,11 @@ static void unlockDevice(){
 
         [mouseWin setUserInteractionEnabled:NO];
         [mouseWin setHidden:NO];
+
+        if ([mouseWin respondsToSelector:@selector(_setSecure:)]){
+            NSLog(@"Set Secure to YES");
+            [mouseWin _setSecure:YES];
+        }
 
         // Create a mouse pointer and add to the window
         mouseView = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"MousePointer.png"]];
