@@ -91,6 +91,57 @@ typedef struct {} Context;
 -(int) activeInterfaceOrientation;
 // frontmost app port on 6.0+
 -(unsigned)_frontmostApplicationPort;
+// unlock && undim on 3.0 & 3.1 - 6.x
+-(void)resetIdleTimerAndUndim:(BOOL)fp8; 
+// iOS 7+
+-(void)resetIdleTimerAndUndim;
+@end
+
+@interface SBAwayController : NSObject
++ (id)sharedAwayController;
+- (BOOL)undimsDisplay;
+- (id)awayView;
+- (void)lock;
+- (void)_unlockWithSound:(BOOL)fp8;
+- (void)unlockWithSound:(BOOL)fp8;
+- (void)unlockWithSound:(BOOL)fp8 alertDisplay:(id)fp12;
+- (void)loadPasscode;
+- (id)devicePasscode;
+- (BOOL)isPasswordProtected;
+- (void)activationChanged:(id)fp8;
+- (BOOL)isDeviceLockedOrBlocked;
+- (void)setDeviceLocked:(BOOL)fp8;
+- (void)applicationRequestedDeviceUnlock;
+- (void)cancelApplicationRequestedDeviceLockEntry;
+- (BOOL)isBlocked;
+- (BOOL)isPermanentlyBlocked:(double *)fp8;
+- (BOOL)isLocked;
+- (void)attemptUnlock;
+- (BOOL)isAttemptingUnlock;
+- (BOOL)attemptDeviceUnlockWithPassword:(id)fp8 alertDisplay:(id)fp12;
+- (void)cancelDimTimer;
+- (void)restartDimTimer:(float)fp8;
+- (id)dimTimer;
+- (BOOL)isDimmed;
+- (void)finishedDimmingScreen;
+- (void)dimScreen:(BOOL)fp8;
+- (void)undimScreen;
+- (void)userEventOccurred;
+- (void)activate;
+- (void)deactivate;
+@end
+
+// from iOS 7+
+@interface SBLockScreenManager
++(id)sharedInstance;
+-(void)unlockUIFromSource:(int)source withOptions:(id)options;
+@property(readonly, assign) BOOL isUILocked;
+@end
+
+// from iOS 7+
+@interface SBUserAgent
++(id)sharedUserAgent;
+-(void)undimScreen;
 @end
 
 @interface SBUIController : NSObject
@@ -144,7 +195,6 @@ typedef enum {
 +(UIScreen*) mainScreen;
 @property(nonatomic,readonly) CGFloat scale;
 @end
-
 
 @interface SpringBoard (Mouse)
 - (void)setMousePointerEnabled:(BOOL)enabled;
@@ -605,6 +655,62 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
 }
 #endif
 
+//
+// Lock/Dim management - handled by hid-support before iOS 6
+// -- hid-support is in backboardd from iOS 6 on, so it cannot handle lock/dimming
+// -- we do it here in lack of a better / not complex solution to this
+
+static bool isLocked() {
+    // pre iOS 7:
+    if (%c(SBAwayController)){
+        return [[%c(SBAwayController) sharedAwayController] isLocked];
+    }        
+    if (%c(SBLockScreenManager)){
+        // request device unlock, if locked
+        SBLockScreenManager * sbLockScreenManager = (SBLockScreenManager*) [%c(SBLockScreenManager) sharedInstance];
+        return [sbLockScreenManager isUILocked];
+    }
+    return NO;
+}
+
+static void undimDisplay(){
+    // pre iOS 7:
+    if (%c(SBAwayController)){
+        // prevent dimming - from BTstack Keyboard
+        [(SpringBoard *)[%c(SpringBoard) sharedApplication] resetIdleTimerAndUndim:YES];
+    }
+    if (%c(SBLockScreenManager)){
+        // turn on screen (nop if already on)
+        SBUserAgent * sbUserAget = [%c(SBUserAgent) sharedUserAgent];
+        [sbUserAget undimScreen];
+
+        // and prevent dimming
+        [(SpringBoard *)[%c(SpringBoard) sharedApplication] resetIdleTimerAndUndim];
+    }
+}
+
+static void unlockDevice(){
+    // pre iOS 7:
+    if (%c(SBAwayController)){
+        // from BTstack Keyboard                    
+        bool wasDimmed = [[%c(SBAwayController) sharedAwayController] isDimmed ];
+        bool wasLocked = [[%c(SBAwayController) sharedAwayController] isLocked ];
+        
+        // handle user unlock
+        if ( wasDimmed || wasLocked ){
+            [[%c(SBAwayController) sharedAwayController] attemptUnlock];
+            [[%c(SBAwayController) sharedAwayController] unlockWithSound:NO];
+        }
+    }
+    if (%c(SBLockScreenManager)){
+        // request device unlock, if locked
+        SBLockScreenManager * sbLockScreenManager = (SBLockScreenManager*) [%c(SBLockScreenManager) sharedInstance];
+        if ([sbLockScreenManager isUILocked]){
+            [sbLockScreenManager unlockUIFromSource:0 withOptions:nil];
+        }
+    }
+}
+
 %hook SpringBoard
 
 %new(v@:c)
@@ -726,8 +832,19 @@ MSHook(void *, _ZN2CA6Render7Context8hit_testERKNS_4Vec2IfEEj, Context *context,
     // Get pos of on-screen pointer
     [self moveMousePointerToPoint:point];
 
-    // Check for mouse button events
+    // unlock/undim if needed on iOS 6 and higher
+    if (is_60_or_higher) {
+        if (isLocked()){
+            if (diff){
+                unlockDevice();
+                undimDisplay();
+            }
+        } else {
+            undimDisplay();
+        }
+    }
 
+    // Check for mouse button events
     if ((diff & 0x10) != 0) {
         // Simulate Headset button press
         struct GSEventRecord record;
